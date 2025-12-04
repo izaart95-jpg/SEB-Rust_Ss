@@ -1,4 +1,4 @@
-name: Parsec  Screenshot
+name: Parsee Screenshot
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   parsec-share:
     runs-on: windows-latest
-    timeout-minutes: 144  # 24 hours
+    timeout-minutes: 140  # 24 hours
 
     steps:
       - name: Create working directory
@@ -84,7 +84,7 @@ jobs:
           Start-Process -FilePath $ahkInstaller -ArgumentList "/S" -Wait
           
           # Create AHK script for Parsec automation
-          $ahkScript = @"
+          $ahkScript = @'
 #NoEnv
 SendMode Input
 SetWorkingDir %A_ScriptDir%
@@ -134,7 +134,7 @@ Sleep, 10000
 Sleep, 2000
 
 ; Take screenshot of login state
-RunWait, PowerShell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap `$screen.Width, `$screen.Height; `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$screen.Location, [System.Drawing.Point]::Empty, `$screen.Size); `$bitmap.Save('$env:WORK_DIR\before_reload.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
+RunWait, PowerShell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; $graphics = [System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size); $bitmap.Save('$env:WORK_DIR\before_reload.png', [System.Drawing.Imaging.ImageFormat]::Png); $graphics.Dispose(); $bitmap.Dispose()"
 
 ; Try to find and click Reload button
 ; We'll try multiple approaches
@@ -148,7 +148,7 @@ Sleep, 5000
 
 ; Take screenshot after reload
 Sleep, 2000
-RunWait, PowerShell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap `$screen.Width, `$screen.Height; `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$screen.Location, [System.Drawing.Point]::Empty, `$screen.Size); `$bitmap.Save('$env:WORK_DIR\after_reload.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
+RunWait, PowerShell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; $graphics = [System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size); $bitmap.Save('$env:WORK_DIR\after_reload.png', [System.Drawing.Imaging.ImageFormat]::Png); $graphics.Dispose(); $bitmap.Dispose()"
 
 ; Look for Share button (try common button texts)
 ; Click around likely positions
@@ -158,11 +158,11 @@ Click
 
 ; Take final screenshot
 Sleep, 3000
-RunWait, PowerShell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap `$screen.Width, `$screen.Height; `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$screen.Location, [System.Drawing.Point]::Empty, `$screen.Size); `$bitmap.Save('$env:WORK_DIR\final_screenshot.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
+RunWait, PowerShell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; $graphics = [System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size); $bitmap.Save('$env:WORK_DIR\final_screenshot.png', [System.Drawing.Imaging.ImageFormat]::Png); $graphics.Dispose(); $bitmap.Dispose()"
 
 ; Keep script running
 MsgBox, Automation complete. Parsec is running. Click OK to exit script (workflow will continue).
-"@
+'@
           
           $ahkScriptPath = "$env:WORK_DIR\parsec_automation.ahk"
           Set-Content -Path $ahkScriptPath -Value $ahkScript
