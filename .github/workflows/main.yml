@@ -6,7 +6,7 @@ on:
 jobs:
   parsec-screenshot:
     runs-on: windows-latest
-    timeout-minutes: 288  # 48 hours (2 days)
+    timeout-minutes: 280  # 48 hours (2 days)
 
     steps:
       - name: Download Parsec installer
