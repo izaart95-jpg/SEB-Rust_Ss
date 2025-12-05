@@ -1,69 +1,36 @@
-name: Parsec Screenshot Debug
+name: Parsec Screenshot Final
 on:
   workflow_dispatch:
 
 jobs:
-  parsec-debug:
+  parsec-screenshots:
     runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
-      - name: Setup workspace
+      - name: Setup with absolute path
         run: |
-          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
-          mkdir -Force parsec-screenshots
-          cd parsec-screenshots
-          echo "WORK_DIR=$(Get-Location)" >> $env:GITHUB_ENV
+          # Use absolute path consistently
+          $workDir = "D:\a\SEB\SEB\screenshots"
+          New-Item -ItemType Directory -Path $workDir -Force
+          Set-Location $workDir
+          echo "WORK_DIR=$workDir" >> $env:GITHUB_ENV
+          echo "Current dir: $(Get-Location)"
 
-      - name: Download reliable NirCmd
+      - name: Get NirCmd
         run: |
-          # Using a direct download from NirSoft
-          $nircmdUrl = "https://www.nirsoft.net/utils/nircmd-x64.zip"
+          # Simple method - use direct download
+          $nircmdUrl = "https://raw.githubusercontent.com/actions/virtual-environments/main/images/win/scripts/Helpers/nircmd.exe"
           $nircmdPath = "$env:WORK_DIR\nircmd.exe"
-          
-          # Download and extract
-          $tempZip = "$env:TEMP\nircmd.zip"
-          Invoke-WebRequest -Uri $nircmdUrl -OutFile $tempZip -UserAgent "Mozilla/5.0"
-          Expand-Archive -Path $tempZip -DestinationPath "$env:TEMP\nircmd_temp" -Force
-          
-          # Find and copy nircmd.exe
-          $foundExe = Get-ChildItem -Path "$env:TEMP\nircmd_temp" -Filter "nircmd.exe" -Recurse | Select-Object -First 1
-          if ($foundExe) {
-              Copy-Item -Path $foundExe.FullName -Destination $nircmdPath -Force
-              Write-Host "NirCmd copied to: $nircmdPath"
-              echo "NIRCMD_PATH=$nircmdPath" >> $env:GITHUB_ENV
-          } else {
-              Write-Host "NirCmd not found in archive, using alternative..."
-              # Fallback to built-in PowerShell method
-              echo "NIRCMD_PATH=PowerShell" >> $env:GITHUB_ENV
-          }
+          Invoke-WebRequest -Uri $nircmdUrl -OutFile $nircmdPath
+          echo "NIRCMD_PATH=$nircmdPath" >> $env:GITHUB_ENV
 
-      - name: Take test screenshots
+      - name: Take initial screenshot
         run: |
-          Write-Host "=== Testing screenshot methods ==="
-          
-          # Method 1: Try NirCmd if available
-          if ($env:NIRCMD_PATH -ne "PowerShell") {
-              Write-Host "Testing NirCmd..."
-              & "$env:NIRCMD_PATH" savescreenshotfull "test_nircmd.png"
-          }
-          
-          # Method 2: PowerShell .NET (always works)
-          Write-Host "Testing PowerShell method..."
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
-          
-          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save("test_powershell.png", [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose()
-          $bitmap.Dispose()
-          
-          # Show what we created
-          Write-Host "Files created:"
-          Get-ChildItem *.png
+          Write-Host "Taking initial screenshot..."
+          & $env:NIRCMD_PATH savescreenshotfull "initial.png"
+          Write-Host "Files in $env:WORK_DIR:"
+          Get-ChildItem
 
       - name: Download Parsec
         run: |
@@ -71,59 +38,74 @@ jobs:
           $parsecUrl = "https://builds.parsec.app/package/parsec-windows.exe"
           $parsecPath = "$env:WORK_DIR\parsec.exe"
           Invoke-WebRequest -Uri $parsecUrl -OutFile $parsecPath
-          Write-Host "Downloaded: $((Get-Item $parsecPath).Length / 1MB) MB"
+          Write-Host "Parsec downloaded"
 
       - name: Install Parsec
         run: |
           Write-Host "Installing Parsec..."
-          # Try silent install
-          Start-Process -FilePath "$env:WORK_DIR\parsec.exe" -ArgumentList "/S" -Wait -NoNewWindow
-          Start-Sleep -Seconds 5
+          Start-Process -FilePath "$env:WORK_DIR\parsec.exe" -ArgumentList "/S" -Wait
+          Start-Sleep -Seconds 10
+          
+          # Take screenshot after install
+          & $env:NIRCMD_PATH savescreenshotfull "after_install.png"
 
-      - name: Take Parsec screenshots
+      - name: Take multiple Parsec screenshots
         run: |
           Write-Host "Taking Parsec screenshots..."
-          cd $env:WORK_DIR
           
-          # Take 3 screenshots with PowerShell method
-          for ($i = 1; $i -le 3; $i++) {
-              Add-Type -AssemblyName System.Windows.Forms
-              Add-Type -AssemblyName System.Drawing
-              
-              $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-              $bitmap.Save("parsec_$i.png", [System.Drawing.Imaging.ImageFormat]::Png)
-              $graphics.Dispose()
-              $bitmap.Dispose()
-              
-              Write-Host "Screenshot $i saved"
-              Start-Sleep -Seconds 1
+          # Take 5 screenshots with delays
+          for ($i = 1; $i -le 5; $i++) {
+              $fileName = "parsec_$i.png"
+              & $env:NIRCMD_PATH savescreenshotfull $fileName
+              Write-Host "Screenshot $i: $fileName"
+              Start-Sleep -Seconds 2
           }
 
-      - name: List all files
+      - name: Verify files exist
         run: |
-          Write-Host "=== ALL FILES ==="
-          cd $env:WORK_DIR
-          Get-ChildItem -Recurse | Format-Table Name, Length, LastWriteTime -AutoSize
+          Write-Host "=== VERIFYING FILES ==="
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Absolute path: $((Get-Location).Path)"
           
-          Write-Host "=== PNG FILES ==="
-          $pngs = Get-ChildItem *.png
-          Write-Host "Found $($pngs.Count) PNG files"
-          $pngs | ForEach-Object { Write-Host "  - $_ ($($_.Length/1KB) KB)" }
+          Write-Host "All files in work directory:"
+          Get-ChildItem -Path $env:WORK_DIR | Format-Table -AutoSize
+          
+          Write-Host "PNG files specifically:"
+          $pngFiles = Get-ChildItem -Path $env:WORK_DIR -Filter "*.png"
+          Write-Host "Found $($pngFiles.Count) PNG files"
+          $pngFiles | ForEach-Object {
+              $sizeKB = [math]::Round($_.Length / 1KB, 2)
+              Write-Host "  - $($_.Name) ($sizeKB KB)"
+          }
+          
+          # Also check parent directory
+          Write-Host "Checking parent directory:"
+          Get-ChildItem -Path "D:\a\SEB\SEB" -Filter "*.png" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "  Found in parent: $($_.Name)"
+          }
 
-      - name: Upload screenshots
+      - name: Upload screenshots artifact
         uses: actions/upload-artifact@v4
         with:
           name: parsec-screenshots
-          path: ${{ env.WORK_DIR }}/*.png
-          if-no-files-found: error
+          path: D:\a\SEB\SEB\screenshots\*.png
           retention-days: 1
 
-      - name: Upload everything
+      - name: Upload all files artifact
         uses: actions/upload-artifact@v4
         with:
-          name: parsec-all-files
-          path: ${{ env.WORK_DIR }}
+          name: all-files
+          path: D:\a\SEB\SEB\screenshots
           retention-days: 1
+
+      - name: Final verification
+        run: |
+          Write-Host "=== WORKFLOW COMPLETE ==="
+          Write-Host "Check these artifacts:"
+          Write-Host "1. 'parsec-screenshots' - should contain PNG files"
+          Write-Host "2. 'all-files' - contains everything in screenshots folder"
+          Write-Host ""
+          Write-Host "If no screenshots appear, the issue is:"
+          Write-Host "1. Screenshots are black/empty in CI environment"
+          Write-Host "2. NirCmd isn't capturing the screen"
+          Write-Host "3. Some other permission issue"
