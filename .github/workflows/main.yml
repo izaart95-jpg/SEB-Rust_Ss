@@ -55,7 +55,7 @@ jobs:
           
           Write-Host "Initial screenshot saved"
 
-      - name: Start Parsec and attempt login
+      - name: Start Parsec and configure auto-login
         run: |
           Write-Host "Starting Parsec..."
           
@@ -68,8 +68,12 @@ jobs:
           
           # Give Parsec time to load
           Start-Sleep -Seconds 5
+
+      - name: Simulate login with proper field navigation
+        run: |
+          Write-Host "=== ATTEMPTING PARSEC LOGIN ==="
           
-          # Take screenshot of login screen
+          # First, let's take a screenshot to see what we're dealing with
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen
@@ -77,40 +81,97 @@ jobs:
           $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
           $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save("$env:WORK_DIR\parsec_login_screen.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $bitmap.Save("$env:WORK_DIR\before_login.png", [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose()
           $bitmap.Dispose()
           
-          # Try to send keystrokes to the system
-          Write-Host "Attempting to send keystrokes..."
+          # Wait a bit for Parsec to be ready
+          Start-Sleep -Seconds 3
           
-          # Load Windows Forms for SendKeys
-          Add-Type -AssemblyName System.Windows.Forms
+          # Method 1: Try to find and activate Parsec window
+          Write-Host "Looking for Parsec window..."
           
-          # Activate the Parsec window by window title
-          $shell = New-Object -ComObject "Shell.Application"
-          $windows = $shell.Windows()
-          foreach ($window in $windows) {
-              if ($window.LocationName -like "*Parsec*" -or $window.LocationName -like "*Sign*") {
-                  Write-Host "Found Parsec window"
-                  break
+          # Use PowerShell to find the Parsec window
+          Add-Type @"
+            using System;
+            using System.Runtime.InteropServices;
+            public class Win32 {
+                [DllImport("user32.dll")]
+                public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+                
+                [DllImport("user32.dll")]
+                public static extern bool SetForegroundWindow(IntPtr hWnd);
+                
+                [DllImport("user32.dll")]
+                [return: MarshalAs(UnmanagedType.Bool)]
+                public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                
+                [DllImport("user32.dll")]
+                public static extern IntPtr GetForegroundWindow();
+                
+                [DllImport("user32.dll")]
+                public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+            }
+"@
+          
+          # Try to find Parsec window
+          $parsecWindow = [Win32]::FindWindow($null, "Parsec")
+          if ($parsecWindow -eq [IntPtr]::Zero) {
+              $parsecWindow = [Win32]::FindWindow($null, "Sign In")
+              if ($parsecWindow -eq [IntPtr]::Zero) {
+                  $parsecWindow = [Win32]::FindWindow($null, "*Parsec*")
               }
           }
           
-          # Send test keystrokes
-          Write-Host "Sending test input..."
-          [System.Windows.Forms.SendKeys]::SendWait("test@example.com")
+          if ($parsecWindow -ne [IntPtr]::Zero) {
+              Write-Host "Found Parsec window, bringing to foreground..."
+              [Win32]::SetForegroundWindow($parsecWindow)
+              [Win32]::ShowWindow($parsecWindow, 3) # SW_MAXIMIZE = 3
+              Start-Sleep -Seconds 2
+          }
+          
+          # Method 2: Use SendKeys with proper delays and navigation
+          Write-Host "Starting login sequence..."
+          Add-Type -AssemblyName System.Windows.Forms
+          
+          # Send ALT key to ensure we're in the application
+          [System.Windows.Forms.SendKeys]::SendWait("%")
+          Start-Sleep -Milliseconds 500
+          
+          # Click in the email field (assuming it's focused by default)
+          Write-Host "Entering email..."
+          
+          # Clear any existing text first
+          [System.Windows.Forms.SendKeys]::SendWait("^a") # Ctrl+A to select all
+          [System.Windows.Forms.SendKeys]::SendWait("{DELETE}")
+          Start-Sleep -Milliseconds 500
+          
+          # Enter email
+          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
           Start-Sleep -Seconds 1
+          
+          # Navigate to password field (usually Tab key)
+          Write-Host "Navigating to password field..."
           [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
           Start-Sleep -Seconds 1
-          [System.Windows.Forms.SendKeys]::SendWait("password123")
-          Start-Sleep -Seconds 2
           
-          Write-Host "Login attempt simulated"
+          # Enter password
+          Write-Host "Entering password..."
+          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+          Start-Sleep -Seconds 1
+          
+          # Try to submit (usually Enter or another Tab then Enter)
+          Write-Host "Submitting login..."
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Milliseconds 500
+          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          
+          Write-Host "Login attempt completed"
+          Start-Sleep -Seconds 3
 
-      - name: Take multiple screenshots
+      - name: Take multiple screenshots after login attempt
         run: |
-          Write-Host "Taking multiple screenshots..."
+          Write-Host "Taking multiple screenshots after login..."
           
           for ($i = 1; $i -le 5; $i++) {
               Add-Type -AssemblyName System.Windows.Forms
@@ -122,7 +183,7 @@ jobs:
               $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
               $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
               
-              $fileName = "parsec_$i.png"
+              $fileName = "parsec_after_login_$i.png"
               $bitmap.Save("$env:WORK_DIR\$fileName", [System.Drawing.Imaging.ImageFormat]::Png)
               $graphics.Dispose()
               $bitmap.Dispose()
@@ -131,9 +192,52 @@ jobs:
               Start-Sleep -Seconds 2
           }
 
-      - name: Verify and upload files
+      - name: Alternative method using PowerShell UI Automation
         run: |
-          Write-Host "=== VERIFYING FILES ==="
+          Write-Host "=== ALTERNATIVE LOGIN METHOD ==="
+          Start-Sleep -Seconds 5
+          
+          # Try using UI Automation if previous method failed
+          try {
+              Add-Type -AssemblyName UIAutomationClient
+              Add-Type -AssemblyName UIAutomationTypes
+              
+              Write-Host "Attempting UI Automation..."
+              
+              # Take screenshot of current state
+              Add-Type -AssemblyName System.Windows.Forms
+              Add-Type -AssemblyName System.Drawing
+              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+              $bounds = $screen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+              $bitmap.Save("$env:WORK_DIR\ui_automation_attempt.png", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose()
+              $bitmap.Dispose()
+              
+          } catch {
+              Write-Host "UI Automation failed: $_"
+          }
+
+      - name: Final verification and cleanup
+        run: |
+          Write-Host "=== FINAL VERIFICATION ==="
+          Start-Sleep -Seconds 5
+          
+          # Take one final screenshot
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          $bounds = $screen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save("$env:WORK_DIR\final_state.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+          
+          Write-Host "=== ALL FILES ==="
           Get-ChildItem -Path $env:WORK_DIR | Format-Table Name, Length, LastWriteTime -AutoSize
           
           $pngFiles = Get-ChildItem -Path $env:WORK_DIR -Filter "*.png"
