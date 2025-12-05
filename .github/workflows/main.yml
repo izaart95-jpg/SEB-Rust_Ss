@@ -1,218 +1,314 @@
-name: Parsec Auto Login
+name: Parsec with Auto Login
 on:
   workflow_dispatch:
 
 jobs:
-  parsec-login:
+  parsec:
     runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
       - name: Setup directory
         run: |
-          $workDir = "D:\a\SEB\SEB\parsec-login"
+          $workDir = "D:\a\SEB\SEB\parsec"
           New-Item -ItemType Directory -Path $workDir -Force
           Set-Location $workDir
           echo "WORK_DIR=$workDir" >> $env:GITHUB_ENV
           Write-Host "Working in: $workDir"
 
-      - name: Install Parsec
+      - name: Download screenshot tools
+        run: |
+          # Download nircmd for potential use
+          $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip"
+          $zipPath = "$env:TEMP\nircmd.zip"
+          Write-Host "Downloading NirCmd..."
+          Invoke-WebRequest -Uri $nircmdUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\nircmd_extract" -Force
+          $nircmdExe = Get-ChildItem -Path "$env:TEMP\nircmd_extract" -Filter "nircmd.exe" -Recurse | Select-Object -First 1
+          if ($nircmdExe) {
+              Copy-Item -Path $nircmdExe.FullName -Destination "$env:WORK_DIR\nircmd.exe" -Force
+          }
+
+      - name: Install .NET Framework for UI automation
+        run: |
+          # Ensure .NET Framework 4.8 is available for Windows Forms
+          Write-Host "Checking .NET Framework..."
+          Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full\' | Get-ItemPropertyValue -Name Release | ForEach-Object { $_ -ge 528040 }
+
+      - name: Download Parsec
         run: |
           Write-Host "Downloading Parsec..."
           $parsecUrl = "https://builds.parsec.app/package/parsec-windows.exe"
           $parsecPath = "$env:WORK_DIR\parsec.exe"
           Invoke-WebRequest -Uri $parsecUrl -OutFile $parsecPath
-          
-          Write-Host "Installing Parsec..."
-          Start-Process -FilePath $parsecPath -ArgumentList "/S" -Wait -NoNewWindow
+          Write-Host "Parsec downloaded: $((Get-Item $parsecPath).Length / 1MB) MB"
+
+      - name: Install Parsec
+        run: |
+          Write-Host "Installing Parsec silently..."
+          Start-Process -FilePath "$env:WORK_DIR\parsec.exe" -ArgumentList "/S" -Wait -NoNewWindow
           Start-Sleep -Seconds 10
-
-      - name: Take initial screenshot
-        run: |
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
           
-          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-          $bounds = $screen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save("$env:WORK_DIR\initial.png", [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose()
-          $bitmap.Dispose()
-          Write-Host "Initial screenshot saved"
-
-      - name: Start Parsec and take login screen
-        run: |
-          Write-Host "Starting Parsec..."
-          # Launch Parsec
-          Start-Process "C:\Program Files\Parsec\parsecd.exe" -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 5
-          
-          # Take screenshot
+          # Take screenshot after install
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen
           $bounds = $screen.Bounds
           $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save("$env:WORK_DIR\login_screen.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $screen.Bounds.Size)
+          $bitmap.Save("$env:WORK_DIR\1_after_install.png", [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose()
           $bitmap.Dispose()
 
-      - name: Download and install AutoHotkey
+      - name: Launch Parsec and perform auto-login
         run: |
-          Write-Host "Downloading AutoHotkey..."
-          $ahkUrl = "https://www.autohotkey.com/download/ahk-install.exe"
-          $ahkPath = "$env:WORK_DIR\ahk-install.exe"
-          Invoke-WebRequest -Uri $ahkUrl -OutFile $ahkPath
+          Write-Host "Launching Parsec..."
           
-          Write-Host "Installing AutoHotkey..."
-          Start-Process -FilePath $ahkPath -ArgumentList "/S" -Wait -NoNewWindow
-          Start-Sleep -Seconds 5
-
-      - name: Create and run login AHK script
-        run: |
-          Write-Host "Creating AHK login script..."
-          
-          # Create the AHK script file directly
-          $ahkContent = @'
-#NoEnv
-SendMode Input
-SetWorkingDir %A_ScriptDir%
-
-; Wait for Parsec window
-Sleep, 5000
-
-; Take screenshot before login
-Run, powershell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen; `$bounds = `$screen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap(`$bounds.Width, `$bounds.Height); `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$bounds.Location, [System.Drawing.Point]::Empty, `$bounds.Size); `$bitmap.Save('$env:WORK_DIR\before_login.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
-
-; Try to focus on Parsec window
-WinActivate, Parsec
-Sleep, 2000
-
-; Click on approximate email field position (adjust these!)
-Click, 500, 300
-Sleep, 1000
-
-; Type email
-Send, ffbewafa709@gmail.com
-Sleep, 1000
-
-; Tab to password
-Send, {Tab}
-Sleep, 500
-
-; Type password
-Send, Hamza@123456
-Sleep, 1000
-
-; Screenshot with credentials
-Run, powershell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen; `$bounds = `$screen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap(`$bounds.Width, `$bounds.Height); `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$bounds.Location, [System.Drawing.Point]::Empty, `$bounds.Size); `$bitmap.Save('$env:WORK_DIR\credentials_entered.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
-
-; Click login button (adjust coordinates!)
-Click, 500, 400
-Sleep, 3000
-
-; Final screenshot
-Run, powershell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen; `$bounds = `$screen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap(`$bounds.Width, `$bounds.Height); `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$bounds.Location, [System.Drawing.Point]::Empty, `$bounds.Size); `$bitmap.Save('$env:WORK_DIR\after_login_click.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
-
-Sleep, 5000
-'@
-          
-          # Save to file
-          $ahkPath = "$env:WORK_DIR\login.ahk"
-          $ahkContent | Out-File -FilePath $ahkPath -Encoding UTF8
-          
-          # Run AHK script
-          Write-Host "Running AHK script..."
-          Start-Process "C:\Program Files\AutoHotkey\AutoHotkey.exe" -ArgumentList "`"$ahkPath`""
-          Start-Sleep -Seconds 15
-
-      - name: Wait for 2FA
-        run: |
-          Write-Host "=========================================="
-          Write-Host "WAITING FOR 2FA - Check email"
-          Write-Host "Waiting 60 seconds..."
-          Write-Host "=========================================="
-          Start-Sleep -Seconds 60
-          
-          # Screenshot after 2FA wait
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
-          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-          $bounds = $screen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save("$env:WORK_DIR\after_2fa_wait.png", [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose()
-          $bitmap.Dispose()
-
-      - name: Try to click Share button
-        run: |
-          Write-Host "Creating Share button AHK script..."
-          
-          $shareScript = @'
-#NoEnv
-SendMode Input
-SetWorkingDir %A_ScriptDir%
-
-Sleep, 3000
-
-; Try different positions for Share button
-; Top area
-Click, 700, 100
-Sleep, 1000
-
-; Middle area
-Click, 700, 300
-Sleep, 1000
-
-; Bottom area
-Click, 700, 500
-Sleep, 1000
-
-; Take screenshot after clicks
-Run, powershell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; `$screen = [System.Windows.Forms.Screen]::PrimaryScreen; `$bounds = `$screen.Bounds; `$bitmap = New-Object System.Drawing.Bitmap(`$bounds.Width, `$bounds.Height); `$graphics = [System.Drawing.Graphics]::FromImage(`$bitmap); `$graphics.CopyFromScreen(`$bounds.Location, [System.Drawing.Point]::Empty, `$bounds.Size); `$bitmap.Save('$env:WORK_DIR\share_clicks.png', [System.Drawing.Imaging.ImageFormat]::Png); `$graphics.Dispose(); `$bitmap.Dispose()"
-
-Sleep, 3000
-'@
-          
-          $sharePath = "$env:WORK_DIR\share.ahk"
-          $shareScript | Out-File -FilePath $sharePath -Encoding UTF8
-          
-          Start-Process "C:\Program Files\AutoHotkey\AutoHotkey.exe" -ArgumentList "`"$sharePath`""
+          # Start Parsec (it should auto-start after install, but we'll ensure it)
+          $parsecProcess = Start-Process "parsec" -PassThru
           Start-Sleep -Seconds 10
-
-      - name: Take final screenshots
-        run: |
-          Write-Host "Taking final screenshots..."
-          for ($i = 1; $i -le 3; $i++) {
-              Add-Type -AssemblyName System.Windows.Forms
-              Add-Type -AssemblyName System.Drawing
+          
+          # Take screenshot of initial launch
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          $bounds = $screen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $screen.Bounds.Size)
+          $bitmap.Save("$env:WORK_DIR\2_launch.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+          
+          Write-Host "Parsec process ID: $($parsecProcess.Id)"
+          
+          # Get Parsec window
+          Add-Type @"
+            using System;
+            using System.Runtime.InteropServices;
+            using System.Text;
+            
+            public class Win32 {
+                [DllImport("user32.dll")]
+                public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+                
+                [DllImport("user32.dll")]
+                public static extern bool SetForegroundWindow(IntPtr hWnd);
+                
+                [DllImport("user32.dll")]
+                public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                
+                [DllImport("user32.dll")]
+                [return: MarshalAs(UnmanagedType.Bool)]
+                public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+                
+                [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+                public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+                
+                public const int SW_RESTORE = 9;
+            }
+            
+            [StructLayout(LayoutKind.Sequential)]
+            public struct RECT {
+                public int Left;
+                public int Top;
+                public int Right;
+                public int Bottom;
+            }
+"@
+          
+          # Find Parsec window (try multiple possible window titles)
+          $parsecWindow = $null
+          $windowTitles = @("Parsec", "Login - Parsec", "Parsec Login")
+          
+          foreach ($title in $windowTitles) {
+              $parsecWindow = [Win32]::FindWindow($null, $title)
+              if ($parsecWindow -ne [IntPtr]::Zero) {
+                  Write-Host "Found Parsec window with title: $title"
+                  break
+              }
+          }
+          
+          if ($parsecWindow -eq [IntPtr]::Zero) {
+              Write-Host "Could not find Parsec window by title, trying to find by process..."
+              $parsecProcesses = Get-Process | Where-Object { $_.ProcessName -like "*parsec*" -or $_.MainWindowTitle -like "*parsec*" }
+              if ($parsecProcesses) {
+                  foreach ($proc in $parsecProcesses) {
+                      Write-Host "Process: $($proc.ProcessName), Window: $($proc.MainWindowTitle)"
+                  }
+              }
+          } else {
+              # Bring window to foreground
+              [Win32]::ShowWindow($parsecWindow, [Win32]::SW_RESTORE)
+              [Win32]::SetForegroundWindow($parsecWindow)
+              Start-Sleep -Seconds 2
+              
+              # Take screenshot of Parsec window
               $screen = [System.Windows.Forms.Screen]::PrimaryScreen
               $bounds = $screen.Bounds
               $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
               $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-              $bitmap.Save("$env:WORK_DIR\final_$i.png", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $screen.Bounds.Size)
+              $bitmap.Save("$env:WORK_DIR\3_parsec_window.png", [System.Drawing.Imaging.ImageFormat]::Png)
               $graphics.Dispose()
               $bitmap.Dispose()
-              Start-Sleep -Seconds 2
+              
+              # Simulate login using Windows Forms SendKeys
+              # Note: SendKeys may not work with UAC or elevated windows
+              Write-Host "Attempting to simulate login..."
+              
+              # Send Tab to navigate to email field (if it's not already focused)
+              [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+              Start-Sleep -Milliseconds 500
+              
+              # Type email (replace with your test email)
+              [System.Windows.Forms.SendKeys]::SendWait("test@example.com")
+              Start-Sleep -Milliseconds 500
+              
+              # Tab to password field
+              [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+              Start-Sleep -Milliseconds 500
+              
+              # Type password (replace with test password)
+              [System.Windows.Forms.SendKeys]::SendWait("testpassword123")
+              Start-Sleep -Milliseconds 500
+              
+              # Tab to login button and press Enter
+              [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+              Start-Sleep -Milliseconds 500
+              [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+              
+              Write-Host "Login simulation completed"
+          }
+          
+          Start-Sleep -Seconds 5
+
+      - name: Take post-login screenshots
+        run: |
+          Write-Host "Taking post-login screenshots..."
+          
+          for ($i = 1; $i -le 5; $i++) {
+              Add-Type -AssemblyName System.Windows.Forms
+              Add-Type -AssemblyName System.Drawing
+              
+              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+              $bounds = $screen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $screen.Bounds.Size)
+              
+              $fileName = "post_login_$i.png"
+              $bitmap.Save("$env:WORK_DIR\$fileName", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose()
+              $bitmap.Dispose()
+              
+              Write-Host "Post-login screenshot $i saved"
+              Start-Sleep -Seconds 3
+          }
+
+      - name: Alternative: Use AutoHotkey for more reliable automation
+        run: |
+          Write-Host "Setting up AutoHotkey for automation..."
+          
+          # Download AutoHotkey
+          $ahkUrl = "https://www.autohotkey.com/download/ahk-install.exe"
+          $ahkPath = "$env:TEMP\ahk-install.exe"
+          Invoke-WebRequest -Uri $ahkUrl -OutFile $ahkPath
+          
+          # Create AutoHotkey script
+          $ahkScript = @"
+#NoEnv
+SendMode Input
+SetWorkingDir %A_ScriptDir%
+SetTitleMatchMode, 2
+
+; Wait for Parsec window
+WinWait, Parsec,, 30
+if ErrorLevel
+{
+    FileAppend, Could not find Parsec window, %A_Temp%\parsec_error.log
+    ExitApp, 1
+}
+
+; Bring Parsec to foreground
+WinActivate, Parsec
+WinWaitActive, Parsec,, 10
+
+; Take a screenshot before login
+Send, {PrintScreen}
+Sleep, 1000
+
+; Navigate to email field and enter email
+Send, {Tab}
+Sleep, 500
+Send, test@example.com
+Sleep, 500
+
+; Navigate to password field and enter password
+Send, {Tab}
+Sleep, 500
+Send, testpassword123
+Sleep, 500
+
+; Navigate to login button and click
+Send, {Tab}
+Sleep, 500
+Send, {Enter}
+
+; Wait a moment
+Sleep, 3000
+
+; Take screenshot after login attempt
+Send, {PrintScreen}
+Sleep, 1000
+
+; Save screenshots from clipboard
+Loop, 2
+{
+    if (Clipboard != "")
+    {
+        ; Create unique filename
+        FormatTime, CurrentDateTime,, yyyyMMdd_HHmmss
+        filename = %A_Temp%\parsec_screenshot_%CurrentDateTime%_%A_Index%.png
+        
+        ; This is a simplified version - actual image saving would need more code
+        FileAppend, Screenshot taken at %CurrentDateTime%, %filename%.txt
+    }
+    Sleep, 1000
+}
+
+ExitApp, 0
+"@
+          
+          $ahkScriptPath = "$env:WORK_DIR\parsec_login.ahk"
+          $ahkScript | Out-File -FilePath $ahkScriptPath -Encoding ASCII
+          Write-Host "AutoHotkey script created: $ahkScriptPath"
+
+      - name: Verify and upload all files
+        run: |
+          Write-Host "=== VERIFYING FILES ==="
+          Write-Host "Files in $env:WORK_DIR:"
+          Get-ChildItem -Path $env:WORK_DIR -Recurse | Format-Table Name, Length, LastWriteTime -AutoSize
+          
+          $pngFiles = Get-ChildItem -Path $env:WORK_DIR -Filter "*.png"
+          Write-Host "PNG files: $($pngFiles.Count)"
+          $pngFiles | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 2)
+              Write-Host "  ✓ $($_.Name) - $sizeMB MB"
           }
 
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: parsec-login-screenshots
-          path: D:\a\SEB\SEB\parsec-login\*.png
+          name: parsec-screenshots-with-login
+          path: D:\a\SEB\SEB\parsec\*.png
+          if-no-files-found: error
           retention-days: 1
 
       - name: Upload all files
         uses: actions/upload-artifact@v4
         with:
-          name: parsec-all-files
-          path: D:\a\SEB\SEB\parsec-login\
+          name: parsec-complete-files
+          path: D:\a\SEB\SEB\parsec\
           retention-days: 1
