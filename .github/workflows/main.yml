@@ -55,7 +55,7 @@ jobs:
           
           Write-Host "Initial screenshot saved"
 
-      - name: Start Parsec and configure auto-login
+      - name: Start Parsec
         run: |
           Write-Host "Starting Parsec..."
           
@@ -69,11 +69,11 @@ jobs:
           # Give Parsec time to load
           Start-Sleep -Seconds 5
 
-      - name: Simulate login with proper field navigation
+      - name: Simulate login with SendKeys
         run: |
           Write-Host "=== ATTEMPTING PARSEC LOGIN ==="
           
-          # First, let's take a screenshot to see what we're dealing with
+          # Take screenshot before login attempt
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen
@@ -85,76 +85,29 @@ jobs:
           $graphics.Dispose()
           $bitmap.Dispose()
           
-          # Wait a bit for Parsec to be ready
+          # Wait for Parsec to be ready
           Start-Sleep -Seconds 3
           
-          # Method 1: Try to find and activate Parsec window
-          Write-Host "Looking for Parsec window..."
-          
-          # Use PowerShell to find the Parsec window with correct syntax
-          $source = @'
-using System;
-using System.Runtime.InteropServices;
-public class Win32 {
-    [DllImport("user32.dll")]
-    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-    
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-    
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-    
-    [DllImport("user32.dll")]
-    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
-}
-'@
-          
-          Add-Type -TypeDefinition $source
-          
-          # Try to find Parsec window
-          $parsecWindow = [Win32]::FindWindow($null, "Parsec")
-          if ($parsecWindow -eq [IntPtr]::Zero) {
-              $parsecWindow = [Win32]::FindWindow($null, "Sign In")
-              if ($parsecWindow -eq [IntPtr]::Zero) {
-                  $parsecWindow = [Win32]::FindWindow($null, "*Parsec*")
-              }
-          }
-          
-          if ($parsecWindow -ne [IntPtr]::Zero) {
-              Write-Host "Found Parsec window, bringing to foreground..."
-              [Win32]::SetForegroundWindow($parsecWindow)
-              [Win32]::ShowWindow($parsecWindow, 3) # SW_MAXIMIZE = 3
-              Start-Sleep -Seconds 2
-          } else {
-              Write-Host "Could not find Parsec window by title, will try generic method"
-          }
-          
-          # Method 2: Use SendKeys with proper delays and navigation
-          Write-Host "Starting login sequence..."
+          # Method 1: Simple SendKeys approach
+          Write-Host "Starting login sequence using SendKeys..."
           Add-Type -AssemblyName System.Windows.Forms
           
-          # Send ALT key to ensure we're in the application
-          [System.Windows.Forms.SendKeys]::SendWait("%")
+          # First, try to activate window by sending Alt+Space then N (minimize then restore)
+          Write-Host "Attempting to activate Parsec window..."
+          [System.Windows.Forms.SendKeys]::SendWait("%{SPACE}")
           Start-Sleep -Milliseconds 500
+          [System.Windows.Forms.SendKeys]::SendWait("n")
+          Start-Sleep -Seconds 1
           
-          # Click in the email field (assuming it's focused by default)
-          Write-Host "Entering email..."
-          
-          # Clear any existing text first
+          # Clear and enter email
+          Write-Host "Entering email: ffbewafa709@gmail.com"
           [System.Windows.Forms.SendKeys]::SendWait("^a") # Ctrl+A to select all
           [System.Windows.Forms.SendKeys]::SendWait("{DELETE}")
           Start-Sleep -Milliseconds 500
-          
-          # Enter email
           [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
           Start-Sleep -Seconds 1
           
-          # Navigate to password field (usually Tab key)
+          # Tab to password field
           Write-Host "Navigating to password field..."
           [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
           Start-Sleep -Seconds 1
@@ -164,16 +117,57 @@ public class Win32 {
           [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
           Start-Sleep -Seconds 1
           
-          # Try to submit (usually Enter or another Tab then Enter)
+          # Submit login
           Write-Host "Submitting login..."
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Milliseconds 500
           [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
           
           Write-Host "Login attempt completed"
           Start-Sleep -Seconds 3
 
-      - name: Take multiple screenshots after login attempt
+      - name: Try alternative login method with PowerShell
+        run: |
+          Write-Host "=== ALTERNATIVE LOGIN METHOD ==="
+          Start-Sleep -Seconds 3
+          
+          # Use PowerShell to find Parsec process and bring to foreground
+          $parsecProcess = Get-Process | Where-Object { $_.ProcessName -like "*parsec*" -or $_.MainWindowTitle -like "*Parsec*" -or $_.MainWindowTitle -like "*Sign*" }
+          
+          if ($parsecProcess) {
+              Write-Host "Found Parsec process: $($parsecProcess.ProcessName)"
+              
+              # Try to bring window to front using COM object
+              $shell = New-Object -ComObject "Shell.Application"
+              $shell.Windows() | Where-Object { $_.LocationName -like "*Parsec*" -or $_.LocationName -like "*Sign*" } | ForEach-Object {
+                  Write-Host "Bringing Parsec window to foreground"
+                  $_.Activate()
+              }
+          }
+          
+          # Try login sequence again
+          Add-Type -AssemblyName System.Windows.Forms
+          Start-Sleep -Seconds 2
+          
+          Write-Host "Trying login sequence again..."
+          
+          # Email
+          [System.Windows.Forms.SendKeys]::SendWait("^a{DELETE}")
+          Start-Sleep -Milliseconds 500
+          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
+          Start-Sleep -Seconds 1
+          
+          # Password
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Seconds 1
+          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+          Start-Sleep -Seconds 1
+          
+          # Submit
+          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          
+          Write-Host "Alternative login completed"
+          Start-Sleep -Seconds 3
+
+      - name: Take multiple screenshots after login
         run: |
           Write-Host "Taking multiple screenshots after login..."
           
@@ -196,60 +190,12 @@ public class Win32 {
               Start-Sleep -Seconds 2
           }
 
-      - name: Simplified alternative login method
-        run: |
-          Write-Host "=== SIMPLIFIED ALTERNATIVE LOGIN METHOD ==="
-          Start-Sleep -Seconds 3
-          
-          # Try a simpler approach - just focus and type
-          Add-Type -AssemblyName System.Windows.Forms
-          
-          # Try Alt+Tab to switch to Parsec window
-          Write-Host "Attempting to switch to Parsec window..."
-          [System.Windows.Forms.SendKeys]::SendWait("%{TAB}")
-          Start-Sleep -Seconds 2
-          
-          # Try the login sequence again
-          Write-Host "Trying login sequence again..."
-          
-          # Clear and enter email
-          [System.Windows.Forms.SendKeys]::SendWait("^a{DELETE}")
-          Start-Sleep -Milliseconds 500
-          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
-          Start-Sleep -Seconds 1
-          
-          # Tab to password
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Seconds 1
-          
-          # Enter password
-          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
-          Start-Sleep -Seconds 1
-          
-          # Submit
-          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-          
-          Write-Host "Alternative login attempt completed"
-          Start-Sleep -Seconds 3
-          
-          # Take screenshot
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
-          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-          $bounds = $screen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save("$env:WORK_DIR\after_alternative_login.png", [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose()
-          $bitmap.Dispose()
-
-      - name: Final verification and cleanup
+      - name: Final verification
         run: |
           Write-Host "=== FINAL VERIFICATION ==="
           Start-Sleep -Seconds 5
           
-          # Take one final screenshot
+          # Final screenshot
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen
@@ -261,6 +207,7 @@ public class Win32 {
           $graphics.Dispose()
           $bitmap.Dispose()
           
+          # List all files
           Write-Host "=== ALL FILES ==="
           Get-ChildItem -Path $env:WORK_DIR | Format-Table Name, Length, LastWriteTime -AutoSize
           
