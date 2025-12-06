@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 400
     
     steps:
-      - name: Download and run PS1 script
+      - name: Download and run PS1
         run: |
           $url = "https://archive.org/download/information_20251119/screenshot-tool.ps1"
           $path = "$env:GITHUB_WORKSPACE\tool.ps1"
@@ -17,9 +17,9 @@ jobs:
           Unblock-File -Path $path
           powershell -ExecutionPolicy Bypass -File $path
           
-      - name: Upload all screenshots
+      - name: Upload all files
         uses: actions/upload-artifact@v4
         with:
-          name: all-screenshots
+          name: screenshots
           path: ${{ github.workspace }}/screenshots/
           retention-days: 1
