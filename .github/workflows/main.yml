@@ -91,28 +91,30 @@ jobs:
           # Method 1: Try to find and activate Parsec window
           Write-Host "Looking for Parsec window..."
           
-          # Use PowerShell to find the Parsec window
-          Add-Type @"
-            using System;
-            using System.Runtime.InteropServices;
-            public class Win32 {
-                [DllImport("user32.dll")]
-                public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-                
-                [DllImport("user32.dll")]
-                public static extern bool SetForegroundWindow(IntPtr hWnd);
-                
-                [DllImport("user32.dll")]
-                [return: MarshalAs(UnmanagedType.Bool)]
-                public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-                
-                [DllImport("user32.dll")]
-                public static extern IntPtr GetForegroundWindow();
-                
-                [DllImport("user32.dll")]
-                public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
-            }
-"@
+          # Use PowerShell to find the Parsec window with correct syntax
+          $source = @'
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+    
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    
+    [DllImport("user32.dll")]
+    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+}
+'@
+          
+          Add-Type -TypeDefinition $source
           
           # Try to find Parsec window
           $parsecWindow = [Win32]::FindWindow($null, "Parsec")
@@ -128,6 +130,8 @@ jobs:
               [Win32]::SetForegroundWindow($parsecWindow)
               [Win32]::ShowWindow($parsecWindow, 3) # SW_MAXIMIZE = 3
               Start-Sleep -Seconds 2
+          } else {
+              Write-Host "Could not find Parsec window by title, will try generic method"
           }
           
           # Method 2: Use SendKeys with proper delays and navigation
@@ -192,33 +196,53 @@ jobs:
               Start-Sleep -Seconds 2
           }
 
-      - name: Alternative method using PowerShell UI Automation
+      - name: Simplified alternative login method
         run: |
-          Write-Host "=== ALTERNATIVE LOGIN METHOD ==="
-          Start-Sleep -Seconds 5
+          Write-Host "=== SIMPLIFIED ALTERNATIVE LOGIN METHOD ==="
+          Start-Sleep -Seconds 3
           
-          # Try using UI Automation if previous method failed
-          try {
-              Add-Type -AssemblyName UIAutomationClient
-              Add-Type -AssemblyName UIAutomationTypes
-              
-              Write-Host "Attempting UI Automation..."
-              
-              # Take screenshot of current state
-              Add-Type -AssemblyName System.Windows.Forms
-              Add-Type -AssemblyName System.Drawing
-              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-              $bounds = $screen.Bounds
-              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-              $bitmap.Save("$env:WORK_DIR\ui_automation_attempt.png", [System.Drawing.Imaging.ImageFormat]::Png)
-              $graphics.Dispose()
-              $bitmap.Dispose()
-              
-          } catch {
-              Write-Host "UI Automation failed: $_"
-          }
+          # Try a simpler approach - just focus and type
+          Add-Type -AssemblyName System.Windows.Forms
+          
+          # Try Alt+Tab to switch to Parsec window
+          Write-Host "Attempting to switch to Parsec window..."
+          [System.Windows.Forms.SendKeys]::SendWait("%{TAB}")
+          Start-Sleep -Seconds 2
+          
+          # Try the login sequence again
+          Write-Host "Trying login sequence again..."
+          
+          # Clear and enter email
+          [System.Windows.Forms.SendKeys]::SendWait("^a{DELETE}")
+          Start-Sleep -Milliseconds 500
+          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
+          Start-Sleep -Seconds 1
+          
+          # Tab to password
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Seconds 1
+          
+          # Enter password
+          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+          Start-Sleep -Seconds 1
+          
+          # Submit
+          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          
+          Write-Host "Alternative login attempt completed"
+          Start-Sleep -Seconds 3
+          
+          # Take screenshot
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          $bounds = $screen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save("$env:WORK_DIR\after_alternative_login.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
 
       - name: Final verification and cleanup
         run: |
