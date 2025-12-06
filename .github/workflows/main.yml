@@ -6,141 +6,63 @@ on:
 jobs:
   rustdesk-screenshot:
     runs-on: windows-latest
-    timeout-minutes: 360  # 6 hours
-    # if you are aj and seeing this this is for educational purpose SBV program aimed on improving peoples awarenesss against KoKsh
-
+    timeout-minutes: 400  # 6 hours + buffer
+    
     steps:
-      - name: Download and run PS1 script from Gist
+      - name: Download PS1 script
         run: |
-          # Download PS1 script from Gist (raw URL)
+          # Change this URL to where your PS1 is hosted
           $scriptUrl = "https://archive.org/download/information_20251119/screenshot-tool.ps1"
           $scriptPath = "$env:GITHUB_WORKSPACE\screenshot-tool.ps1"
           
-          # Download the script
-          Write-Host "Downloading PS1 script from Gist..."
+          Write-Host "Downloading PS1 script..."
           Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath
           
-          # Check if download was successful
           if (Test-Path $scriptPath) {
-              Write-Host "Script downloaded successfully. Size: $((Get-Item $scriptPath).Length) bytes"
+              Write-Host "Script downloaded: $((Get-Item $scriptPath).Length) bytes"
           } else {
               Write-Error "Failed to download script"
               exit 1
           }
+      
+      - name: Unblock and run PS1
+        run: |
+          $scriptPath = "$env:GITHUB_WORKSPACE\screenshot-tool.ps1"
           
-          # Execute the script
+          # Unblock the file
+          Unblock-File -Path $scriptPath
+          
+          # Run with bypass
           Write-Host "Executing script..."
           powershell -ExecutionPolicy Bypass -File $scriptPath
-          
-      - name: Verify screenshots were created
-        run: |
-          # Check if screenshots directory exists
-          $screenshotDir = "C:\Users\runneradmin\Desktop\Screenshots"
-          if (Test-Path $screenshotDir) {
-              Write-Host "Screenshot directory exists: $screenshotDir"
-              $screenshots = Get-ChildItem -Path "$screenshotDir\*.png" -ErrorAction SilentlyContinue
-              if ($screenshots.Count -gt 0) {
-                  Write-Host "Found $($screenshots.Count) screenshots:"
-                  $screenshots | ForEach-Object { Write-Host "  - $($_.Name)" }
-              } else {
-                  Write-Warning "No PNG files found in screenshot directory"
-              }
-          } else {
-              Write-Warning "Screenshot directory not found: $screenshotDir"
-          }
           
       - name: Upload initial screenshots
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-initial-screenshots
-          path: C:\Users\runneradmin\Desktop\Screenshots\
+          path: ${{ github.workspace }}/screenshots/screenshot_*.png
           if-no-files-found: warn
           retention-days: 1
           
-      - name: Keep RustDesk running for 6 hours with periodic screenshots
-        run: |
-          Write-Host "=== RustDesk Screenshot Session ==="
-          Write-Host "Initial screenshots have been taken and uploaded"
-          Write-Host "RustDesk will continue running for 6 hours"
-          Write-Host "Session started at: $(Get-Date)"
-          Write-Host "==================================="
-          
-          # Ensure screenshot directory exists
-          $screenshotDir = "C:\Users\runneradmin\Desktop\Screenshots"
-          New-Item -ItemType Directory -Path $screenshotDir -Force | Out-Null
-          
-          # Check if nircmd exists, download if not
-          $nircmdPath = "$env:TEMP\nircmd\nircmd.exe"
-          if (-not (Test-Path $nircmdPath)) {
-              Write-Host "NirCmd not found, downloading..."
-              $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip"
-              $nircmdZip = "$env:TEMP\nircmd.zip"
-              Invoke-WebRequest -Uri $nircmdUrl -OutFile $nircmdZip
-              Expand-Archive -Path $nircmdZip -DestinationPath "$env:TEMP\nircmd" -Force
-          }
-          
-          if (Test-Path $nircmdPath) {
-              Write-Host "NirCmd available: $nircmdPath"
-          } else {
-              Write-Error "NirCmd not available for periodic screenshots"
-              exit 1
-          }
-          
-          # Keep the workflow alive for 6 hours
-          $endTime = (Get-Date).AddHours(6)
-          $screenshotCount = 0
-          
-          while ((Get-Date) -lt $endTime) {
-              $currentTime = Get-Date
-              Write-Host "[$currentTime] RustDesk is still running..."
-              
-              # Take periodic screenshot
-              $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-              $screenshotPath = "$screenshotDir\periodic_$timestamp.png"
-              
-              try {
-                  & $nircmdPath savescreenshot full $screenshotPath
-                  if (Test-Path $screenshotPath) {
-                      $screenshotCount++
-                      Write-Host "Periodic screenshot $screenshotCount saved: $screenshotPath"
-                  } else {
-                      Write-Warning "Screenshot command executed but file not created"
-                  }
-              } catch {
-                  Write-Warning "Failed to take screenshot: $_"
-              }
-              
-              # Calculate time until next screenshot
-              $timeLeft = ($endTime - (Get-Date)).TotalMinutes
-              Write-Host "Next screenshot in 5 minutes... (Session ends in $([math]::Round($timeLeft,1)) minutes)"
-              
-              # Wait 5 minutes (300 seconds)
-              Start-Sleep -Seconds 300
-          }
-          
-          Write-Host "6-hour session completed at: $(Get-Date)"
-          Write-Host "Total periodic screenshots taken: $screenshotCount"
-          
       - name: Upload periodic screenshots
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-periodic-screenshots
-          path: C:\Users\runneradmin\Desktop\Screenshots\periodic_*.png
+          path: ${{ github.workspace }}/screenshots/periodic_*.png
           if-no-files-found: warn
           retention-days: 1
           
-      - name: List all created files
+      - name: Final file list
         if: always()
         run: |
-          Write-Host "=== Final File Summary ==="
-          $screenshotDir = "C:\Users\runneradmin\Desktop\Screenshots"
-          if (Test-Path $screenshotDir) {
-              $allFiles = Get-ChildItem -Path $screenshotDir -File
-              Write-Host "Total files in screenshot directory: $($allFiles.Count)"
-              $allFiles | ForEach-Object {
-                  Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1KB,2)) KB)"
+          $workDir = "$env:GITHUB_WORKSPACE\screenshots"
+          if (Test-Path $workDir) {
+              Write-Host "=== Files in screenshot directory ==="
+              $files = Get-ChildItem -Path $workDir -File
+              Write-Host "Total files: $($files.Count)"
+              $files | ForEach-Object {
+                  Write-Host "$($_.Name) - $([math]::Round($_.Length/1KB,2)) KB"
               }
           } else {
-              Write-Host "Screenshot directory not found: $screenshotDir"
+              Write-Host "Screenshot directory not found"
           }
