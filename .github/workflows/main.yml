@@ -85,7 +85,7 @@ jobs:
             sleep 2
           done
 
-      - name: 🔥 NEW: Click 210,563 After Verification
+      - name:  NEW Click 210,563 After Verification
         run: |
           echo "Click at fixed coordinates 210,563"
           brew install cliclick
