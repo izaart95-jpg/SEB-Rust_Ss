@@ -1,117 +1,237 @@
-name: RustDesk Screenshot
-
+name: Parsec Auto Login
 on:
   workflow_dispatch:
 
 jobs:
-  rustdesk-screenshot:
+  parsec:
     runs-on: windows-latest
-    timeout-minutes: 360  # 24 hours
+    timeout-minutes: 30
 
     steps:
-      - name: Download RustDesk
+      - name: Setup directory
         run: |
-          $rustdeskUrl = "https://github.com/rustdesk/rustdesk/releases/download/1.4.4/rustdesk-1.4.4-x86_64.exe"
-          $rustdeskPath = "$env:TEMP\rustdesk.exe"
-          Invoke-WebRequest -Uri $rustdeskUrl -OutFile $rustdeskPath
-          echo "RUSTDESK_PATH=$rustdeskPath" >> $env:GITHUB_ENV
-
-      - name: Download NirCmd
-        run: |
-          $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip"
-          $nircmdZip = "$env:TEMP\nircmd.zip"
-          $nircmdDir = "$env:TEMP\nircmd"
-          
-          Invoke-WebRequest -Uri $nircmdUrl -OutFile $nircmdZip
-          Expand-Archive -Path $nircmdZip -DestinationPath $nircmdDir -Force
-          # Copy nircmd.exe to a more accessible location
-          Copy-Item "$nircmdDir\nircmd.exe" "$env:TEMP\nircmd.exe"
-          echo "NIRCMD_PATH=$env:TEMP\nircmd.exe" >> $env:GITHUB_ENV
-
-      - name: Create and use working directory
-        run: |
-          # Create a dedicated working directory
-          $workDir = "$env:GITHUB_WORKSPACE\screenshots"
+          $workDir = "D:\a\SEB\SEB\parsec"
           New-Item -ItemType Directory -Path $workDir -Force
           Set-Location $workDir
           echo "WORK_DIR=$workDir" >> $env:GITHUB_ENV
+          Write-Host "Working in: $workDir"
 
-      - name: Start RustDesk and take screenshots
+      - name: Download nircmd
         run: |
-          # Start RustDesk
-          Start-Process -FilePath $env:RUSTDESK_PATH
-          Write-Host "RustDesk started, waiting for initialization..."
+          Write-Host "Downloading nircmd..."
+          $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip"
+          $zipPath = "$env:TEMP\nircmd.zip"
+          Invoke-WebRequest -Uri $nircmdUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\nircmd_extract" -Force
+          $nircmdExe = Get-ChildItem -Path "$env:TEMP\nircmd_extract" -Filter "nircmd.exe" -Recurse | Select-Object -First 1
+          if ($nircmdExe) {
+              Copy-Item -Path $nircmdExe.FullName -Destination "$env:WORK_DIR\nircmd.exe" -Force
+              Write-Host "nircmd downloaded successfully"
+          }
+
+      - name: Download and install Parsec
+        run: |
+          Write-Host "Downloading Parsec..."
+          $parsecUrl = "https://builds.parsec.app/package/parsec-windows.exe"
+          $parsecPath = "$env:WORK_DIR\parsec.exe"
+          Invoke-WebRequest -Uri $parsecUrl -OutFile $parsecPath
+          
+          Write-Host "Installing Parsec silently..."
+          Start-Process -FilePath $parsecPath -ArgumentList "/S" -Wait -NoNewWindow
           Start-Sleep -Seconds 10
 
-          # Change to working directory for screenshots
-          Set-Location $env:WORK_DIR
+      - name: Start Parsec
+        run: |
+          Write-Host "Starting Parsec..."
+          
+          # Start Parsec
+          $parsecExePath = "C:\Program Files\Parsec\parsecd.exe"
+          if (Test-Path $parsecExePath) {
+              Start-Process $parsecExePath
+              Write-Host "Parsec started..."
+          }
+          
+          Start-Sleep -Seconds 10
 
-          # Take 3 screenshots with full paths
-          for ($i = 1; $i -le 3; $i++) {
-              Write-Host "Taking screenshot $i..."
-              $screenshotPath = "$env:WORK_DIR\screenshot_$i.png"
-              & $env:NIRCMD_PATH savescreenshot full "$screenshotPath"
-              Write-Host "Screenshot saved to: $screenshotPath"
+      - name: PERFECT LOGIN WITH EXACT COORDINATES
+        run: |
+          Write-Host "=== PERFECT LOGIN WITH EXACT COORDINATES ==="
+          Write-Host "Using your exact screenshot coordinates:"
+          Write-Host "Email field: 455, 411"
+          Write-Host "Password field: 557, 529"
+          Write-Host "Login button: 537, 615"
+          
+          if (Test-Path "$env:WORK_DIR\nircmd.exe") {
+              # STEP 1: CLICK AND TYPE IN EMAIL FIELD
+              Write-Host "Step 1: Clicking EMAIL field at 455, 411"
+              & "$env:WORK_DIR\nircmd.exe" setcursor 455 411
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left dblclick
+              Start-Sleep -Seconds 1
+              
+              # Type email
+              Add-Type -AssemblyName System.Windows.Forms
+              Write-Host "Typing email: ffbewafa709@gmail.com"
+              [System.Windows.Forms.SendKeys]::SendWait("^a")  # Ctrl+A to select all
+              Start-Sleep -Milliseconds 200
+              [System.Windows.Forms.SendKeys]::SendWait("{DELETE}")  # Delete
+              Start-Sleep -Milliseconds 500
+              [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
               Start-Sleep -Seconds 2
-          }
-
-      - name: Verify and list screenshots
-        run: |
-          Write-Host "Current directory: $(Get-Location)"
-          Write-Host "Looking for screenshots in: $env:WORK_DIR"
-          Get-ChildItem -Path $env:WORK_DIR -Recurse -Force
-          
-          $screenshots = Get-ChildItem -Path "$env:WORK_DIR\*.png" -ErrorAction SilentlyContinue
-          if ($screenshots.Count -eq 0) {
-              Write-Host "No PNG files found. Trying different locations..."
-              # Check common locations
-              Get-ChildItem -Path "$env:TEMP\*.png" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "Found in TEMP: $($_.FullName)" }
-              Get-ChildItem -Path "C:\*.png" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "Found in C:\: $($_.FullName)" }
+              
+              # Screenshot after email
+              Add-Type -AssemblyName System.Drawing
+              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+              $bounds = $screen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+              $bitmap.Save("$env:WORK_DIR\step1_email_done.png", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose()
+              $bitmap.Dispose()
+              
+              # STEP 2: CLICK AND TYPE IN PASSWORD FIELD
+              Write-Host "Step 2: Clicking PASSWORD field at 557, 529"
+              & "$env:WORK_DIR\nircmd.exe" setcursor 557 529
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left dblclick
+              Start-Sleep -Seconds 1
+              
+              # Type password
+              Write-Host "Typing password: Hamza@123456"
+              [System.Windows.Forms.SendKeys]::SendWait("^a")  # Ctrl+A to select all
+              Start-Sleep -Milliseconds 200
+              [System.Windows.Forms.SendKeys]::SendWait("{DELETE}")  # Delete
+              Start-Sleep -Milliseconds 500
+              [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+              Start-Sleep -Seconds 2
+              
+              # Screenshot after password
+              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+              $bitmap.Save("$env:WORK_DIR\step2_password_done.png", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose()
+              $bitmap.Dispose()
+              
+              # STEP 3: CLICK LOGIN BUTTON
+              Write-Host "Step 3: Clicking LOGIN button at 537, 615"
+              & "$env:WORK_DIR\nircmd.exe" setcursor 537 615
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left click
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left click  # Double click to be sure
+              Start-Sleep -Seconds 3
+              
+              Write-Host "Login sequence completed with exact coordinates!"
+              
+              # Also try pressing Enter as backup
+              Write-Host "Also trying Enter key as backup..."
+              [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+              Start-Sleep -Seconds 2
           } else {
-              Write-Host "Found $($screenshots.Count) screenshots:"
-              $screenshots | ForEach-Object { Write-Host "  - $($_.FullName)" }
+              Write-Host "ERROR: nircmd.exe not found!"
           }
 
-      - name: Try alternative screenshot method
-        if: always()
+      - name: Alternative method using Tab
         run: |
-          # Alternative method using .NET if NirCmd fails
+          Write-Host "=== ALTERNATIVE: TAB METHOD AS BACKUP ==="
+          Start-Sleep -Seconds 5
+          
           Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
           
-          $screenBounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap $screenBounds.Width, $screenBounds.Height
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($screenBounds.Location, [System.Drawing.Point]::Empty, $screenBounds.Size)
+          # Focus the window first by clicking near center
+          Write-Host "Focusing window..."
+          if (Test-Path "$env:WORK_DIR\nircmd.exe") {
+              & "$env:WORK_DIR\nircmd.exe" setcursor 500 500
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left click
+              Start-Sleep -Seconds 1
+          }
           
-          $screenshotPath = "$env:WORK_DIR\dotnet_screenshot.png"
-          $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose()
-          $bitmap.Dispose()
+          # Tab navigation
+          Write-Host "Tab navigation attempt...")
           
-          Write-Host "Alternative screenshot saved to: $screenshotPath"
+          # Press Tab to get to email field
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Seconds 1
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Seconds 1
+          
+          # Type email
+          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
+          Start-Sleep -Seconds 1
+          
+          # Tab to password
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Seconds 1
+          
+          # Type password
+          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+          Start-Sleep -Seconds 1
+          
+          # Tab to login and press Enter
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Milliseconds 500
+          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          Start-Sleep -Seconds 2
 
-      - name: Upload screenshots as artifacts
+      - name: Take verification screenshots
+        run: |
+          Write-Host "=== FINAL VERIFICATION ==="
+          Start-Sleep -Seconds 8
+          
+          # Take final screenshots
+          for ($i = 1; $i -le 5; $i++) {
+              Add-Type -AssemblyName System.Windows.Forms
+              Add-Type -AssemblyName System.Drawing
+              
+              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+              $bounds = $screen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+              
+              $fileName = "final_$i.png"
+              $bitmap.Save("$env:WORK_DIR\$fileName", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose()
+              $bitmap.Dispose()
+              
+              Write-Host "Final screenshot $i taken"
+              Start-Sleep -Seconds 1
+          }
+          
+          # Check Parsec status
+          $parsecProcess = Get-Process | Where-Object { $_.ProcessName -like "*parsec*" }
+          Write-Host "=== PARSEC STATUS ==="
+          if ($parsecProcess) {
+              Write-Host "✓ Parsec is running"
+              $parsecProcess | Format-Table ProcessName, Id, MainWindowTitle -AutoSize
+              
+              # Check if logged in
+              $loggedIn = $parsecProcess | Where-Object { 
+                  $_.MainWindowTitle -ne "" -and 
+                  $_.MainWindowTitle -notlike "*Sign*" -and 
+                  $_.MainWindowTitle -notlike "*Login*" 
+              }
+              
+              if ($loggedIn) {
+                  Write-Host "✓ SUCCESS: Parsec appears to be logged in!"
+              } else {
+                  Write-Host "? Parsec running but might still be on login screen"
+              }
+          } else {
+              Write-Host "✗ Parsec is NOT running"
+          }
+          
+          Write-Host "=== COORDINATES USED ==="
+          Write-Host "Email: 455, 411"
+          Write-Host "Password: 557, 529"
+          Write-Host "Login: 537, 615"
+
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: rustdesk-screenshots
-          path: |
-            ${{ env.WORK_DIR }}/*.png
-            ${{ env.TEMP }}/*.png
+          name: parsec-results
+          path: D:\a\SEB\SEB\parsec\
           retention-days: 1
-
-      - name: Keep workflow running 24/7
-        run: |
-          Write-Host "=== RustDesk Screenshot Workflow ==="
-          Write-Host "RustDesk is running in the background"
-          Write-Host "Workflow will run for 24 hours or until manually cancelled"
-          Write-Host "====================================="
-          
-          # Keep the workflow alive
-          $startTime = Get-Date
-          while ((New-TimeSpan -Start $startTime -End (Get-Date)).TotalHours -lt 24) {
-              Write-Host "[$(Get-Date)] RustDesk still running... (Ctrl+C in workflow to terminate)"
-              Start-Sleep -Seconds 300
-          }
-          
-          Write-Host "24-hour limit reached, workflow completed"
