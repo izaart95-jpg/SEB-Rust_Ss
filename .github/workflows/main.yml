@@ -1,154 +1,223 @@
-name: RustDesk Screenshot Capture
-
+name: Parsec Auto Login
 on:
   workflow_dispatch:
 
 jobs:
-  rustdesk-screenshots:
-    runs-on: macos-latest
-    timeout-minutes: 30  # Total timeout includes 20 minutes of runtime
+  parsec:
+    runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Install RustDesk
+      - name: Setup directory
         run: |
-          echo "=== Installing RustDesk ==="
-          
-          # Download RustDesk
-          curl -L -o rustdesk.dmg "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk.dmg" || \
-          curl -L -o rustdesk.dmg "https://github.com/rustdesk/rustdesk/releases/download/1.4.4/rustdesk-1.4.4-x86_64.dmg"
-          
-          # Mount and install
-          hdiutil attach rustdesk.dmg -mountpoint /Volumes/RustDesk -nobrowse
-          sudo cp -R "/Volumes/RustDesk/RustDesk.app" /Applications/
-          hdiutil detach /Volumes/RustDesk
-          rm -f rustdesk.dmg
-          
-          echo "✅ RustDesk installed"
+          $workDir = "D:\a\SEB\SEB\parsec"
+          New-Item -ItemType Directory -Path $workDir -Force
+          Set-Location $workDir
+          echo "WORK_DIR=$workDir" >> $env:GITHUB_ENV
+          Write-Host "Working in: $workDir"
 
-      - name: Start RustDesk
+      - name: Download nircmd
         run: |
-          echo "=== Starting RustDesk ==="
-          
-          # Launch RustDesk
-          open -a /Applications/RustDesk.app
-          
-          # Wait for it to start
-          sleep 10
-          
-          # Check if running
-          if pgrep -f "RustDesk" > /dev/null; then
-            echo "✅ RustDesk is running"
-            
-            # Get RustDesk ID from window title or logs
-            echo "RustDesk ID should be visible in the application window"
-          else
-            echo "⚠️ RustDesk may not have started properly"
-          fi
+          Write-Host "Downloading nircmd..."
+          $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip"
+          $zipPath = "$env:TEMP\nircmd.zip"
+          Invoke-WebRequest -Uri $nircmdUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\nircmd_extract" -Force
+          $nircmdExe = Get-ChildItem -Path "$env:TEMP\nircmd_extract" -Filter "nircmd.exe" -Recurse | Select-Object -First 1
+          if ($nircmdExe) {
+              Copy-Item -Path $nircmdExe.FullName -Destination "$env:WORK_DIR\nircmd.exe" -Force
+              Write-Host "nircmd downloaded successfully"
+          }
 
-      - name: Get display resolution
+      - name: Download and install Parsec
         run: |
-          echo "=== Getting display resolution ==="
+          Write-Host "Downloading Parsec..."
+          $parsecUrl = "https://builds.parsec.app/package/parsec-windows.exe"
+          $parsecPath = "$env:WORK_DIR\parsec.exe"
+          Invoke-WebRequest -Uri $parsecUrl -OutFile $parsecPath
           
-          # Get primary display resolution
-          RESOLUTION=$(system_profiler SPDisplaysDataType | grep "Resolution" | head -1 | awk '{print $2 "x" $4}')
-          
-          if [ -z "$RESOLUTION" ]; then
-            # Alternative method
-            RESOLUTION=$(system_profiler SPDisplaysDataType | grep -A1 "Resolution:" | tail -1 | xargs)
-          fi
-          
-          if [ -z "$RESOLUTION" ]; then
-            # Fallback to system command
-            RESOLUTION=$(/usr/sbin/system_profiler SPDisplaysDataType | awk '/Resolution:/ {print $2 "x" $4; exit}')
-          fi
-          
-          echo "Detected resolution: ${RESOLUTION:-Unknown}"
-          echo "RESOLUTION=${RESOLUTION:-Unknown}" >> $GITHUB_ENV
-          
-          # Create screenshots directory
-          mkdir -p screenshots
-          echo "SCREENSHOT_DIR=$(pwd)/screenshots" >> $GITHUB_ENV
+          Write-Host "Installing Parsec silently..."
+          Start-Process -FilePath $parsecPath -ArgumentList "/S" -Wait -NoNewWindow
+          Start-Sleep -Seconds 10
 
-      - name: Take 5 screenshots
+      - name: Start Parsec
         run: |
-          echo "=== Taking 5 screenshots ==="
-          echo "Display resolution: $RESOLUTION"
+          Write-Host "Starting Parsec..."
           
-          # Take 5 screenshots with 2-second intervals
-          for i in {1..5}; do
-            echo "Taking screenshot $i..."
-            
-            timestamp=$(date +%Y%m%d_%H%M%S)
-            screenshot_file="$SCREENSHOT_DIR/screenshot_${i}_${timestamp}.png"
-            
-            # Take screenshot with timestamp in filename
-            screencapture -x "$screenshot_file"
-            
-            # Verify screenshot was created
-            if [ -f "$screenshot_file" ]; then
-              size=$(ls -lh "$screenshot_file" | awk '{print $5}')
-              dimensions=$(file "$screenshot_file" | grep -o "[0-9]* x [0-9]*" | head -1)
-              echo "  Screenshot $i: ${size} (${dimensions})"
-            else
-              echo "  ⚠️ Screenshot $i not created"
-            fi
-            
-            # Wait 2 seconds between screenshots (except after last one)
-            if [ $i -lt 5 ]; then
-              sleep 2
-            fi
-          done
+          $parsecExePath = "C:\Program Files\Parsec\parsecd.exe"
+          if (Test-Path $parsecExePath) {
+              Start-Process $parsecExePath
+              Write-Host "Parsec started..."
+          }
           
-          # List all screenshots
-          echo ""
-          echo "All screenshots:"
-          ls -la "$SCREENSHOT_DIR/"
+          Start-Sleep -Seconds 10
 
-      - name: Upload screenshots
+      - name: Take initial screenshot
+        run: |
+          Write-Host "Taking initial screenshot..."
+          
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          $bounds = $screen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save("$env:WORK_DIR\initial.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+          
+          Write-Host "VM Screen resolution: $($bounds.Width)x$($bounds.Height)"
+
+      - name: Login with exact coordinates
+        run: |
+          Write-Host "=== LOGIN WITH EXACT COORDINATES ==="
+          Write-Host "Email field: 455, 411"
+          Write-Host "Password field: 557, 529"
+          Write-Host "Login button: 537, 615"
+          Write-Host "Original screenshot: 1089x862"
+          
+          # Get current resolution
+          Add-Type -AssemblyName System.Windows.Forms
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+          $currentWidth = $screen.Bounds.Width
+          $currentHeight = $screen.Bounds.Height
+          
+          Write-Host "Current VM resolution: ${currentWidth}x${currentHeight}"
+          
+          # Calculate scaling
+          $scaleX = $currentWidth / 1089
+          $scaleY = $currentHeight / 862
+          
+          # Scale coordinates
+          $emailX = [math]::Round(455 * $scaleX)
+          $emailY = [math]::Round(411 * $scaleY)
+          $passwordX = [math]::Round(557 * $scaleX)
+          $passwordY = [math]::Round(529 * $scaleY)
+          $loginX = [math]::Round(537 * $scaleX)
+          $loginY = [math]::Round(615 * $scaleY)
+          
+          Write-Host "Scaled coordinates:"
+          Write-Host "Email: $emailX, $emailY"
+          Write-Host "Password: $passwordX, $passwordY"
+          Write-Host "Login: $loginX, $loginY"
+          
+          if (Test-Path "$env:WORK_DIR\nircmd.exe") {
+              # Step 1: Email field
+              Write-Host "Step 1: Clicking email field"
+              & "$env:WORK_DIR\nircmd.exe" setcursor $emailX $emailY
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left dblclick
+              Start-Sleep -Seconds 1
+              
+              Add-Type -AssemblyName System.Windows.Forms
+              [System.Windows.Forms.SendKeys]::SendWait("^a{DELETE}ffbewafa709@gmail.com")
+              Start-Sleep -Seconds 1
+              
+              # Step 2: Password field
+              Write-Host "Step 2: Clicking password field"
+              & "$env:WORK_DIR\nircmd.exe" setcursor $passwordX $passwordY
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left dblclick
+              Start-Sleep -Seconds 1
+              
+              [System.Windows.Forms.SendKeys]::SendWait("^a{DELETE}Hamza@123456")
+              Start-Sleep -Seconds 1
+              
+              # Step 3: Login button
+              Write-Host "Step 3: Clicking login button"
+              & "$env:WORK_DIR\nircmd.exe" setcursor $loginX $loginY
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left click
+              Start-Sleep -Seconds 3
+              
+              Write-Host "Login sequence completed"
+          }
+
+      - name: Try alternative methods
+        run: |
+          Write-Host "=== ALTERNATIVE METHODS ==="
+          Start-Sleep -Seconds 5
+          
+          # Method 1: Tab navigation
+          Write-Host "Method 1: Tab navigation"
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}")
+          Start-Sleep -Seconds 1
+          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
+          Start-Sleep -Seconds 1
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Seconds 1
+          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+          Start-Sleep -Seconds 1
+          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          Start-Sleep -Milliseconds 500
+          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          Start-Sleep -Seconds 2
+          
+          # Method 2: Click center and Tab
+          Write-Host "Method 2: Click center and Tab"
+          if (Test-Path "$env:WORK_DIR\nircmd.exe") {
+              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+              $width = $screen.Bounds.Width
+              $height = $screen.Bounds.Height
+              $centerX = [math]::Round($width / 2)
+              $centerY = [math]::Round($height / 2)
+              
+              & "$env:WORK_DIR\nircmd.exe" setcursor $centerX $centerY
+              Start-Sleep -Milliseconds 500
+              & "$env:WORK_DIR\nircmd.exe" sendmouse left click
+              Start-Sleep -Seconds 1
+              
+              [System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}")
+              Start-Sleep -Seconds 1
+              [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
+              Start-Sleep -Seconds 1
+              [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+              Start-Sleep -Seconds 1
+              [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
+              Start-Sleep -Seconds 1
+              [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+              Start-Sleep -Milliseconds 500
+              [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          }
+
+      - name: Take final screenshots
+        run: |
+          Write-Host "=== FINAL RESULTS ==="
+          Start-Sleep -Seconds 8
+          
+          for ($i = 1; $i -le 5; $i++) {
+              Add-Type -AssemblyName System.Windows.Forms
+              Add-Type -AssemblyName System.Drawing
+              
+              $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+              $bounds = $screen.Bounds
+              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+              
+              $bitmap.Save("$env:WORK_DIR\final_$i.png", [System.Drawing.Imaging.ImageFormat]::Png)
+              $graphics.Dispose()
+              $bitmap.Dispose()
+              
+              Write-Host "Final screenshot $i taken"
+              Start-Sleep -Seconds 1
+          }
+          
+          # Check Parsec
+          $parsecProcess = Get-Process | Where-Object { $_.ProcessName -like "*parsec*" }
+          Write-Host "=== PARSEC STATUS ==="
+          if ($parsecProcess) {
+              Write-Host "✓ Parsec is running"
+              $parsecProcess | Format-Table ProcessName, Id, MainWindowTitle -AutoSize
+          } else {
+              Write-Host "✗ Parsec is NOT running"
+          }
+
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: rustdesk-screenshots
-          path: ${{ env.SCREENSHOT_DIR }}
+          name: parsec-results
+          path: D:\a\SEB\SEB\parsec\
           retention-days: 1
-
-      - name: Keep system running for 20 minutes
-        run: |
-          echo "=== Keeping system active for 20 minutes ==="
-          echo "Start time: $(date)"
-          echo "Will run until: $(date -v+20M)"
-          echo ""
-          echo "RustDesk should remain running during this time"
-          echo "You can remotely access via RustDesk ID"
-          echo ""
-          
-          # Display RustDesk status
-          echo "RustDesk Status:"
-          if pgrep -f "RustDesk" > /dev/null; then
-            echo "✅ RustDesk is running"
-          else
-            echo "❌ RustDesk is not running"
-            echo "Attempting to restart RustDesk..."
-            open -a /Applications/RustDesk.app
-            sleep 5
-          fi
-          
-          # Run for exactly 20 minutes
-          echo ""
-          echo "Countdown:"
-          for minute in {20..1}; do
-            echo "$minute minutes remaining..."
-            sleep 60
-          done
-          
-          echo "✅ 20 minutes completed"
-
-      - name: Cleanup
-        if: always()
-        run: |
-          echo "=== Cleanup ==="
-          
-          # Stop RustDesk
-          pkill -f "RustDesk" 2>/dev/null || true
-          
-          echo "✅ RustDesk stopped"
-          echo "Workflow completed"
