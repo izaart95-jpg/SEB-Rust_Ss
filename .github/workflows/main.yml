@@ -9,49 +9,56 @@ jobs:
     timeout-minutes: 45
 
     steps:
-
       - name: Install RustDesk via Homebrew
         run: |
           echo "=== Installing RustDesk via Homebrew ==="
+
           if ! command -v brew &> /dev/null; then
             echo "Installing Homebrew..."
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
             eval "$(/opt/homebrew/bin/brew shellenv)"
           fi
+
           brew install --cask rustdesk
           echo "✅ RustDesk installed via Homebrew"
 
-      - name: Get Display Resolution
+      - name: Get Exact Display Resolution
         run: |
-          echo "=== Getting Display Resolution ==="
+          echo "=== Getting Exact Display Resolution ==="
+
           RESOLUTION=$(osascript -e 'tell application "Finder" to get bounds of window of desktop' 2>/dev/null | awk -F', ' '{print $3 "x" $4}')
-          if [ -z "$RESOLUTION" ] || [ "$RESOLUTION" = "0x0" ]; then
+
+          if [ -z "$RESOLUTION" ] || [[ "$RESOLUTION" == "0x0" ]]; then
             RESOLUTION=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -A1 "Resolution:" | tail -1 | tr -d ' ' | sed 's/[^0-9x]//g')
           fi
-          if [ -z "$RESOLUTION" ]; then RESOLUTION="1024x768"; fi
+
+          if [ -z "$RESOLUTION" ] || [[ "$RESOLUTION" == "0x0" ]]; then
+            RESOLUTION="1024x768"
+            echo "⚠️ Using default runner resolution"
+          fi
+
+          RESOLUTION=$(echo "$RESOLUTION" | tr -d ',' | tr -d ' ')
           WIDTH=$(echo "$RESOLUTION" | cut -d'x' -f1)
           HEIGHT=$(echo "$RESOLUTION" | cut -d'x' -f2)
+
           echo "RESOLUTION=$RESOLUTION" >> $GITHUB_ENV
           echo "SCREEN_WIDTH=$WIDTH" >> $GITHUB_ENV
           echo "SCREEN_HEIGHT=$HEIGHT" >> $GITHUB_ENV
+
           mkdir -p screenshots
           echo "SCREENSHOT_DIR=$(pwd)/screenshots" >> $GITHUB_ENV
 
-      - name: Start RustDesk
+      - name: Start RustDesk and Wait for Permission Prompt
         run: |
           echo "=== Starting RustDesk ==="
           open -a /Applications/RustDesk.app
-          for i in {1..30}; do
-            if pgrep -f "RustDesk" > /dev/null; then break; fi
-            sleep 1
-          done
           sleep 15
 
-      - name: Initial Screenshot
+      - name: Take Initial Screenshot
         run: |
-          timestamp=$(date +%Y%m%d_%H%M%S)
-          screencapture -x "$SCREENSHOT_DIR/before_permission_$timestamp.png"
+          file="$SCREENSHOT_DIR/before_permission.png"
+          screencapture -x "$file"
 
       - name: Calculate Button Position
         run: |
@@ -59,86 +66,86 @@ jobs:
           ORIGINAL_HEIGHT=768
           ORIGINAL_X=462
           ORIGINAL_Y=374
+
           X_SCALE=$(echo "scale=2; $SCREEN_WIDTH / $ORIGINAL_WIDTH" | bc)
           Y_SCALE=$(echo "scale=2; $SCREEN_HEIGHT / $ORIGINAL_HEIGHT" | bc)
-          NEW_X=$(echo "$ORIGINAL_X * $X_SCALE" | bc | awk '{printf "%.0f", $1}')
-          NEW_Y=$(echo "$ORIGINAL_Y * $Y_SCALE" | bc | awk '{printf "%.0f", $1}')
-          if [ $NEW_X -gt $SCREEN_WIDTH ]; then NEW_X=$((SCREEN_WIDTH-10)); fi
-          if [ $NEW_Y -gt $SCREEN_HEIGHT ]; then NEW_Y=$((SCREEN_HEIGHT-10)); fi
+
+          NEW_X=$(echo "$ORIGINAL_X * $X_SCALE" | bc | awk '{printf "%.0f"}')
+          NEW_Y=$(echo "$ORIGINAL_Y * $Y_SCALE" | bc | awk '{printf "%.0f"}')
+
           echo "BUTTON_X=$NEW_X" >> $GITHUB_ENV
           echo "BUTTON_Y=$NEW_Y" >> $GITHUB_ENV
 
       - name: Click Allow Button
         run: |
           brew install cliclick
-          screencapture -x "$SCREENSHOT_DIR/debug_before_click.png"
+
+          debug_before="$SCREENSHOT_DIR/debug_before_click.png"
+          screencapture -x "$debug_before"
+
           cliclick c:$BUTTON_X,$BUTTON_Y
+
           sleep 3
-          screencapture -x "$SCREENSHOT_DIR/debug_after_click.png"
-          osascript - <<EOF
+
+          debug_after="$SCREENSHOT_DIR/debug_after_click.png"
+          screencapture -x "$debug_after"
+
+          # FIXED — SAFE YAML BLOCK
+          osascript <<'EOF'
 tell application "System Events"
-  click at {$BUTTON_X, $BUTTON_Y}
+  delay 1
+  click at {100, 100}
 end tell
 EOF
 
-      - name: Verification Screenshots
+      - name: Take Verification Screenshots
         run: |
           for i in {1..5}; do
-            timestamp=$(date +%Y%m%d_%H%M%S)
-            screencapture -x "$SCREENSHOT_DIR/verification_${i}_$timestamp.png"
+            file="$SCREENSHOT_DIR/verify_$i.png"
+            screencapture -x "$file"
             sleep 2
           done
 
-      ######################################################################
-      #              >>> YOUR NEW ADDON PART IS HERE <<<                   #
-      ######################################################################
+      ###############################################################
+      # 🔥 YOUR REQUESTED ADD-ON
+      # After verification screenshots → click (210,563) then click (542,293)
+      ###############################################################
 
-      - name: Extra Click Sequence After Verification
+      - name: Extra Required Clicks + Screenshot
         run: |
-          echo "=== Running Extra Clicks (Requested) ==="
+          echo "=== Executing Required Extra Clicks ==="
           brew install cliclick
 
-          echo "Click at 210,563"
+          echo "Clicking 210,563"
           cliclick c:210,563
           sleep 2
 
-          echo "Click at 542,293"
+          echo "Clicking 542,293"
           cliclick c:542,293
           sleep 2
 
           echo "Taking screenshot after extra clicks"
-          screenshot="$SCREENSHOT_DIR/after_extra_clicks_$(date +%Y%m%d_%H%M%S).png"
-          screencapture -x "$screenshot"
-          echo "Saved: $screenshot"
+          screencapture -x "$SCREENSHOT_DIR/extra_clicks.png"
 
-      ######################################################################
-
-      - name: Upload Extra Screenshot
+      - name: Upload Extra Click Screenshot
         uses: actions/upload-artifact@v4
         with:
-          name: extra-click-screenshot
-          path: ${{ env.SCREENSHOT_DIR }}/after_extra_clicks_*.png
+          name: extra-clicks
+          path: ${{ env.SCREENSHOT_DIR }}/extra_clicks.png
+          retention-days: 1
+
+      ###############################################################
 
       - name: Keep System Running for 20 Minutes
         run: |
-          STATUS_FILE="$SCREENSHOT_DIR/rustdesk_status.txt"
-          echo "RustDesk 20-Minute Monitoring Log" > "$STATUS_FILE"
-          for minute in {1..20}; do
-            echo "Minute $minute" >> "$STATUS_FILE"
+          echo "=== Keeping alive for 20 minutes ==="
+          for i in {1..20}; do
+            echo "Minute $i"
             sleep 60
           done
 
-      - name: Upload Final Status
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: rustdesk-final-status
-          path: ${{ env.SCREENSHOT_DIR }}
-
       - name: Final Cleanup
-        if: always()
         run: |
-          screencapture -x "$SCREENSHOT_DIR/final_complete_$(date +%H%M%S).png"
-          pkill -f "RustDesk" || true
-          echo "Cleanup done"
-
+          final="$SCREENSHOT_DIR/final.png"
+          screencapture -x "$final"
+          pkill -f RustDesk || true
