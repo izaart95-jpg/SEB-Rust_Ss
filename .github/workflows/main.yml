@@ -1,169 +1,302 @@
-name: Parsec Auto Login
+name: RustDesk Screenshot Capture
+
 on:
   workflow_dispatch:
 
 jobs:
-  parsec:
-    runs-on: windows-latest
+  rustdesk-screenshots:
+    runs-on: macos-latest
     timeout-minutes: 30
 
     steps:
-      - name: Setup directory
+      - name: Check latest RustDesk release
         run: |
-          $workDir = "D:\a\SEB\SEB\parsec"
-          New-Item -ItemType Directory -Path $workDir -Force
-          Set-Location $workDir
-          echo "WORK_DIR=$workDir" >> $env:GITHUB_ENV
-          Write-Host "Working in: $workDir"
+          echo "=== Getting latest RustDesk release info ==="
+          # Get latest release info from GitHub API
+          LATEST_TAG=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          echo "Latest RustDesk version: $LATEST_TAG"
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
 
-      - name: Download and install Parsec
+      - name: Install RustDesk
         run: |
-          Write-Host "Downloading Parsec..."
-          $parsecUrl = "https://builds.parsec.app/package/parsec-windows.exe"
-          $parsecPath = "$env:WORK_DIR\parsec.exe"
-          Invoke-WebRequest -Uri $parsecUrl -OutFile $parsecPath
+          echo "=== Installing RustDesk ==="
           
-          Write-Host "Installing Parsec silently..."
-          Start-Process -FilePath $parsecPath -ArgumentList "/S" -Wait -NoNewWindow
-          Start-Sleep -Seconds 10
+          # Try multiple download URLs
+          echo "Trying to download RustDesk..."
+          
+          # Option 1: Direct download with version
+          if [ ! -z "$LATEST_TAG" ]; then
+            VERSION="${LATEST_TAG#v}"  # Remove 'v' prefix if present
+            DOWNLOAD_URL="https://github.com/rustdesk/rustdesk/releases/download/$LATEST_TAG/rustdesk-$VERSION-x86_64.dmg"
+            echo "Attempting download from: $DOWNLOAD_URL"
+            curl -L -o rustdesk.dmg "$DOWNLOAD_URL" --retry 3
+          fi
+          
+          # Check if download was successful
+          if [ ! -f "rustdesk.dmg" ] || [ ! -s "rustdesk.dmg" ] || file rustdesk.dmg | grep -q "HTML"; then
+            echo "First download failed or got HTML, trying alternative URL..."
+            
+            # Option 2: Alternative URL pattern
+            curl -L -o rustdesk.dmg "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk-x86_64.dmg" --retry 3 || true
+          fi
+          
+          # Check again
+          if [ ! -f "rustdesk.dmg" ] || [ ! -s "rustdesk.dmg" ] || (file rustdesk.dmg 2>/dev/null | grep -q "HTML"); then
+            echo "Alternative download failed, trying direct 1.4.4..."
+            
+            # Option 3: Specific known working version
+            curl -L -o rustdesk.dmg "https://github.com/rustdesk/rustdesk/releases/download/1.4.4/rustdesk-1.4.4-x86_64.dmg" --retry 3 || true
+          fi
+          
+          # Final check - if still no file, try Homebrew
+          if [ ! -f "rustdesk.dmg" ] || [ ! -s "rustdesk.dmg" ] || (file rustdesk.dmg 2>/dev/null | grep -q "HTML"); then
+            echo "All direct downloads failed, trying Homebrew..."
+            
+            # Install via Homebrew
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            brew install --cask rustdesk
+            
+            echo "✅ RustDesk installed via Homebrew"
+          else
+            # Mount and install from DMG
+            echo "DMG downloaded successfully, installing..."
+            
+            # Check DMG file type
+            echo "File type:"
+            file rustdesk.dmg || true
+            
+            # Get file size
+            echo "File size: $(ls -lh rustdesk.dmg | awk '{print $5}')"
+            
+            # Mount the DMG
+            hdiutil attach rustdesk.dmg -mountpoint /Volumes/RustDesk -nobrowse -quiet
+            
+            # Copy to Applications
+            sudo cp -R "/Volumes/RustDesk/RustDesk.app" /Applications/
+            
+            # Unmount
+            hdiutil detach /Volumes/RustDesk -quiet
+            
+            # Clean up
+            rm -f rustdesk.dmg
+            
+            echo "✅ RustDesk installed from DMG"
+          fi
 
-      - name: Start Parsec
+      - name: Start RustDesk
         run: |
-          Write-Host "Starting Parsec..."
+          echo "=== Starting RustDesk ==="
           
-          $parsecExePath = "C:\Program Files\Parsec\parsecd.exe"
-          if (Test-Path $parsecExePath) {
-              Start-Process $parsecExePath
-              Write-Host "Parsec started..."
-          }
-          
-          Start-Sleep -Seconds 10
-
-      - name: Simple Tab Login Method
-        run: |
-          Write-Host "=== SIMPLE TAB LOGIN METHOD ==="
-          Write-Host "Using only Tab and Enter keys"
-          
-          # Wait for Parsec to be ready
-          Start-Sleep -Seconds 3
-          
-          Add-Type -AssemblyName System.Windows.Forms
-          
-          # Step 1: Press Tab twice to get to email field
-          Write-Host "Step 1: Pressing Tab twice to reach email field")
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Seconds 1
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Seconds 1
-          
-          # Step 2: Type email
-          Write-Host "Step 2: Typing email: ffbewafa709@gmail.com")
-          [System.Windows.Forms.SendKeys]::SendWait("ffbewafa709@gmail.com")
-          Start-Sleep -Seconds 1
-          
-          # Step 3: Press Tab to go to password field
-          Write-Host "Step 3: Pressing Tab to go to password field")
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Seconds 1
-          
-          # Step 4: Type password
-          Write-Host "Step 4: Typing password: Hamza@123456")
-          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
-          Start-Sleep -Seconds 1
-          
-          # Step 5: Press Tab to go to login button, then Enter
-          Write-Host "Step 5: Pressing Tab then Enter to login")
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Milliseconds 500
-          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-          Start-Sleep -Seconds 3
-          
-          Write-Host "Tab login method completed")
-
-      - name: Alternative Tab Method
-        run: |
-          Write-Host "=== ALTERNATIVE TAB METHOD ==="
-          Start-Sleep -Seconds 5
-          
-          Add-Type -AssemblyName System.Windows.Forms
-          
-          # Try a different Tab sequence
-          Write-Host "Trying different Tab sequence...")
-          
-          # Press Tab 3 times to cycle through fields
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}{TAB}")
-          Start-Sleep -Seconds 2
-          
-          # Clear and type email
-          [System.Windows.Forms.SendKeys]::SendWait("^a{DELETE}ffbewafa709@gmail.com")
-          Start-Sleep -Seconds 1
-          
-          # Tab to password
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Seconds 1
-          [System.Windows.Forms.SendKeys]::SendWait("Hamza@123456")
-          Start-Sleep -Seconds 1
-          
-          # Tab to login and press Enter
-          [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
-          Start-Sleep -Milliseconds 500
-          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-          Start-Sleep -Seconds 2
-
-      - name: Take verification screenshots
-        run: |
-          Write-Host "=== TAKING VERIFICATION SCREENSHOTS ==="
-          Start-Sleep -Seconds 8
-          
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
-          
-          $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-          $bounds = $screen.Bounds
-          
-          for ($i = 1; $i -le 5; $i++) {
-              $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          # Check if RustDesk is installed
+          if [ -d "/Applications/RustDesk.app" ]; then
+            echo "RustDesk found in Applications"
+            
+            # Launch RustDesk
+            open -a /Applications/RustDesk.app
+            
+            # Wait for it to start
+            sleep 15
+            
+            # Check if running
+            if pgrep -f "RustDesk" > /dev/null; then
+              echo "✅ RustDesk is running"
               
-              $bitmap.Save("$env:WORK_DIR\verify_$i.png", [System.Drawing.Imaging.ImageFormat]::Png)
-              $graphics.Dispose()
-              $bitmap.Dispose()
-              
-              Write-Host "Verification screenshot $i taken")
-              Start-Sleep -Seconds 2
-          }
+              # Try to get RustDesk ID
+              echo "RustDesk should display its ID in the menu bar or window"
+            else
+              echo "⚠️ RustDesk process not found, trying to launch again..."
+              open -a /Applications/RustDesk.app
+              sleep 10
+            fi
+          else
+            echo "❌ RustDesk not found in Applications"
+            echo "Attempting to find RustDesk..."
+            
+            # Try to locate RustDesk
+            if mdfind "kMDItemCFBundleIdentifier = 'com.carriez.rustdesk'" | grep -q .; then
+              RUSTDESK_PATH=$(mdfind "kMDItemCFBundleIdentifier = 'com.carriez.rustdesk'" | head -1)
+              echo "Found RustDesk at: $RUSTDESK_PATH"
+              open "$RUSTDESK_PATH"
+              sleep 15
+            else
+              echo "Could not find RustDesk installation"
+            fi
+          fi
 
-      - name: Check Parsec status
+      - name: Get display resolution
         run: |
-          Write-Host "=== CHECKING PARSEC STATUS ==="
-          Start-Sleep -Seconds 5
+          echo "=== Getting display resolution ==="
           
-          $parsecProcess = Get-Process | Where-Object { $_.ProcessName -like "*parsec*" }
+          # Method 1: Use system_profiler
+          RESOLUTION=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -A1 "Resolution:" | tail -1 | xargs | sed 's/ //g')
           
-          if ($parsecProcess) {
-              Write-Host "✓ Parsec is running")
-              $parsecProcess | Format-Table ProcessName, Id, MainWindowTitle -AutoSize
-              
-              # Check for successful login
-              $mainWindow = $parsecProcess | Where-Object { 
-                  $_.MainWindowTitle -ne "" -and 
-                  $_.MainWindowTitle -notlike "*Sign*" -and 
-                  $_.MainWindowTitle -notlike "*Login*" 
-              }
-              
-              if ($mainWindow) {
-                  Write-Host "✓ SUCCESS! Parsec is logged in")
-              } else {
-                  Write-Host "? Parsec running but might still be on login screen")
-              }
-          } else {
-              Write-Host "✗ Parsec is NOT running")
-          }
+          # Method 2: Use screen command
+          if [ -z "$RESOLUTION" ] || [ "$RESOLUTION" = "Retina:" ]; then
+            RESOLUTION=$(/usr/sbin/system_profiler SPDisplaysDataType 2>/dev/null | grep "Resolution" | head -1 | tr -d ' ' | cut -d: -f2)
+          fi
+          
+          # Method 3: Use applescript
+          if [ -z "$RESOLUTION" ]; then
+            RESOLUTION=$(osascript -e 'tell application "Finder" to get bounds of window of desktop' 2>/dev/null | awk '{print $3 "x" $4}')
+          fi
+          
+          # Method 4: Use displayplacer (fallback)
+          if [ -z "$RESOLUTION" ]; then
+            RESOLUTION="1920x1080"  # Default fallback
+            echo "Using default resolution: $RESOLUTION"
+          else
+            echo "Detected resolution: $RESOLUTION"
+          fi
+          
+          echo "RESOLUTION=$RESOLUTION" >> $GITHUB_ENV
+          
+          # Create screenshots directory
+          mkdir -p screenshots
+          echo "SCREENSHOT_DIR=$(pwd)/screenshots" >> $GITHUB_ENV
+          
+          # Also get screen info for debugging
+          echo ""
+          echo "=== Display Information ==="
+          system_profiler SPDisplaysDataType 2>/dev/null | head -20 || true
 
-      - name: Upload results
+      - name: Take 5 screenshots
+        run: |
+          echo "=== Taking 5 screenshots ==="
+          echo "Display resolution: $RESOLUTION"
+          echo "Screenshot directory: $SCREENSHOT_DIR"
+          
+          # Wait a moment for RustDesk to fully load
+          sleep 5
+          
+          # Take 5 screenshots with 3-second intervals
+          for i in {1..5}; do
+            echo ""
+            echo "Taking screenshot $i/5..."
+            
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            screenshot_file="$SCREENSHOT_DIR/screenshot_${i}_${timestamp}.png"
+            
+            # Take screenshot
+            screencapture -x "$screenshot_file"
+            
+            # Wait a moment for file to be written
+            sleep 1
+            
+            # Verify and display info
+            if [ -f "$screenshot_file" ] && [ -s "$screenshot_file" ]; then
+              size=$(ls -lh "$screenshot_file" | awk '{print $5}')
+              
+              # Try to get dimensions
+              dimensions=$(sips -g pixelWidth -g pixelHeight "$screenshot_file" 2>/dev/null | \
+                          awk '/pixelWidth:/{w=$2} /pixelHeight:/{h=$2} END{print w"x"h}')
+              
+              if [ -z "$dimensions" ]; then
+                dimensions=$(file "$screenshot_file" 2>/dev/null | grep -o "[0-9]* x [0-9]*" | head -1 || echo "Unknown")
+              fi
+              
+              echo "  ✅ Saved: $screenshot_file"
+              echo "  Size: $size, Dimensions: $dimensions"
+            else
+              echo "  ⚠️ Failed to create screenshot $i"
+              
+              # Try alternative method
+              alt_file="$SCREENSHOT_DIR/alt_${i}_${timestamp}.png"
+              screencapture "$alt_file" 2>/dev/null || true
+            fi
+            
+            # Wait between screenshots (except after last one)
+            if [ $i -lt 5 ]; then
+              echo "  Waiting 3 seconds..."
+              sleep 3
+            fi
+          done
+          
+          # List all screenshots
+          echo ""
+          echo "=== All screenshots ==="
+          ls -la "$SCREENSHOT_DIR/" || echo "No screenshots directory"
+          
+          # Count screenshots
+          SCREENSHOT_COUNT=$(find "$SCREENSHOT_DIR" -name "*.png" -type f 2>/dev/null | wc -l)
+          echo "Total screenshots taken: $SCREENSHOT_COUNT"
+
+      - name: Upload screenshots
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: parsec-results
-          path: D:\a\SEB\SEB\parsec\
+          name: rustdesk-screenshots
+          path: ${{ env.SCREENSHOT_DIR }}
           retention-days: 1
+
+      - name: Keep system running for 20 minutes
+        run: |
+          echo "=== Keeping system active for 20 minutes ==="
+          echo "Start time: $(date)"
+          echo "Will run until: $(date -v+20M)"
+          echo ""
+          
+          # Display current status
+          echo "=== Current Status ==="
+          
+          # Check RustDesk
+          if pgrep -f "RustDesk" > /dev/null; then
+            echo "✅ RustDesk: Running"
+          else
+            echo "❌ RustDesk: Not running"
+            echo "Attempting to restart..."
+            open -a /Applications/RustDesk.app 2>/dev/null || true
+          fi
+          
+          # Display resolution
+          echo "📏 Display: $RESOLUTION"
+          
+          # Screenshot count
+          echo "📸 Screenshots taken: $(find "$SCREENSHOT_DIR" -name "*.png" -type f 2>/dev/null | wc -l)"
+          
+          echo ""
+          echo "=== Countdown Started ==="
+          
+          # Countdown timer
+          total_seconds=1200  # 20 minutes in seconds
+          interval=60         # Update every minute
+          
+          for ((seconds=0; seconds<total_seconds; seconds+=interval)); do
+            minutes_remaining=$(( (total_seconds - seconds) / 60 ))
+            echo "[$(date '+%H:%M:%S')] $minutes_remaining minutes remaining..."
+            
+            # Periodic status check
+            if [ $((seconds % 300)) -eq 0 ]; then  # Every 5 minutes
+              echo "  Status check:"
+              if pgrep -f "RustDesk" > /dev/null; then
+                echo "    RustDesk: ✅ Running"
+              else
+                echo "    RustDesk: ❌ Stopped"
+              fi
+              
+              # Take one extra screenshot every 5 minutes
+              extra_file="$SCREENSHOT_DIR/monitor_$(date +%H%M%S).png"
+              screencapture -x "$extra_file" 2>/dev/null && echo "    📸 Extra screenshot taken" || true
+            fi
+            
+            sleep $interval
+          done
+          
+          echo "✅ 20 minutes completed at $(date)"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "=== Cleanup ==="
+          
+          # Stop RustDesk if running
+          if pgrep -f "RustDesk" > /dev/null; then
+            echo "Stopping RustDesk..."
+            pkill -f "RustDesk" 2>/dev/null || true
+            sleep 2
+          fi
+          
+          # Force kill if still running
+          pkill -9 -f "RustDesk" 2>/dev/null || true
+          
+          echo "✅ Cleanup complete"
+          echo "Workflow finished at: $(date)"
