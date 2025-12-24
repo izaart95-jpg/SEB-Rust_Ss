@@ -9,33 +9,47 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # ================= SSHX SETUP =================
+      - name: Prepare working directories
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $work = "$env:USERPROFILE\Downloads\chat-work"
+          $desktop = "$env:USERPROFILE\Desktop"
+
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          New-Item -ItemType Directory -Force -Path $desktop | Out-Null
+
+          "WORK_DIR=$work" | Out-File $env:GITHUB_ENV -Append
+          "DESKTOP_DIR=$desktop" | Out-File $env:GITHUB_ENV -Append
+
+          $startTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+          "START_TIME=$startTime" | Out-File $env:GITHUB_ENV -Append
+
+      # ================= SSHX =================
 
       - name: Download and extract sshx
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          cd "$env:USERPROFILE\Desktop"
+          cd $env:DESKTOP_DIR
 
-          curl.exe --fail -L -o sshx.zip `
-            https://sshx.s3.amazonaws.com/sshx-x86_64-pc-windows-msvc.zip
+          Invoke-WebRequest `
+            -Uri "https://sshx.s3.amazonaws.com/sshx-x86_64-pc-windows-msvc.zip" `
+            -OutFile "sshx.zip"
 
-          Expand-Archive -Path sshx.zip -DestinationPath "." -Force
+          Expand-Archive -Path "sshx.zip" -DestinationPath "." -Force
+          Unblock-File "sshx.exe"
 
-          if (!(Test-Path "sshx.exe")) {
-            throw "sshx.exe not found"
-          }
-
-          Unblock-File sshx.exe
-          echo "SSHX_EXE=$env:USERPROFILE\Desktop\sshx.exe" >> $env:GITHUB_ENV
+          "SSHX_EXE=$env:DESKTOP_DIR\sshx.exe" | Out-File $env:GITHUB_ENV -Append
 
       - name: Run sshx and capture session URL
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          cd "$env:USERPROFILE\Desktop"
+          cd $env:DESKTOP_DIR
 
-          $outFile = "$env:USERPROFILE\Desktop\sshx_output.txt"
+          $outFile = "$env:DESKTOP_DIR\sshx_output.txt"
 
           Start-Process `
             -FilePath "$env:SSHX_EXE" `
@@ -46,35 +60,24 @@ jobs:
           Start-Sleep -Seconds 8
 
           $content = Get-Content $outFile -Raw
-          $match = $content | Select-String -Pattern "https://sshx\.io/s/\S+"
+          $match = $content | Select-String -Pattern 'https://sshx\.io/s/\S+'
 
-          echo ""
-          echo "================ SSHX SESSION ================"
+          Write-Host ""
+          Write-Host "================ SSHX SESSION ================"
+
           if ($match) {
             $url = $match.Matches[0].Value
-            echo "🔗 SSHX LINK: $url"
-            echo "SSHX_URL=$url" >> $env:GITHUB_ENV
+            Write-Host "SSHX LINK: $url"
+            "SSHX_URL=$url" | Out-File $env:GITHUB_ENV -Append
           } else {
-            echo "⚠️ SSHX link not found yet"
-            echo $content
+            Write-Host "SSHX link not detected yet"
+            Write-Host $content
           }
-          echo "=============================================="
-          echo ""
 
-      # ================= PREPARE WORK DIR =================
+          Write-Host "=============================================="
+          Write-Host ""
 
-      - name: Prepare Downloads directory
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $dl = "$env:USERPROFILE\Downloads\chat-work"
-          New-Item -ItemType Directory -Force -Path $dl
-          echo "WORK_DIR=$dl" >> $env:GITHUB_ENV
-
-          $startTime = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-          echo "START_TIME=$startTime" >> $env:GITHUB_ENV
-
-      # ================= DOWNLOAD CHAT =================
+      # ================= CHAT APP =================
 
       - name: Download and extract chat.tar
         shell: powershell
@@ -82,8 +85,9 @@ jobs:
           $ErrorActionPreference = "Stop"
           cd $env:WORK_DIR
 
-          curl.exe --fail -L -o chat.tar `
-            https://abstrusely-procompensation-phuong.ngrok-free.dev/chat.tar
+          Invoke-WebRequest `
+            -Uri "https://abstrusely-procompensation-phuong.ngrok-free.dev/chat.tar" `
+            -OutFile "chat.tar"
 
           tar -xf chat.tar
 
@@ -96,28 +100,28 @@ jobs:
 
       # ================= NGROK =================
 
-      - name: Download ngrok.exe
+      - name: Download ngrok
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
           cd $env:WORK_DIR
 
-          curl.exe --fail -L -o ngrok.zip `
-            https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip
+          Invoke-WebRequest `
+            -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" `
+            -OutFile "ngrok.zip"
 
           Expand-Archive ngrok.zip -Force
-          $ngrok = Get-ChildItem -Recurse -Filter ngrok.exe | Select-Object -First 1
-          echo "NGROK_EXE=$($ngrok.FullName)" >> $env:GITHUB_ENV
 
-      - name: Configure ngrok auth
+          $ngrok = Get-ChildItem -Recurse -Filter ngrok.exe | Select-Object -First 1
+          "NGROK_EXE=$($ngrok.FullName)" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Configure ngrok
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
           & "$env:NGROK_EXE" config add-authtoken 36kAMHU3fGiD51IZZ91dX7y9QWB_4xSjCmBjUCyD2137xtnKh
 
-      # ================= RUN SERVER =================
-
-      - name: Run Node server and ngrok with timer
+      - name: Run Node server and ngrok
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -126,39 +130,32 @@ jobs:
           $targetDuration = (5 * 60 + 50) * 60
           $startTime = [long]$env:START_TIME
 
-          $nodeJob = Start-Job -ScriptBlock {
-            param($dir)
-            cd $dir
+          $nodeJob = Start-Job {
+            cd $using:env:WORK_DIR\chat-main
             node server.js
-          } -ArgumentList "$env:WORK_DIR\chat-main"
+          }
 
           Start-Sleep -Seconds 5
 
-          $ngrokJob = Start-Job -ScriptBlock {
-            param($ngrokPath)
-            & $ngrokPath http 9001 --log=stdout
-          } -ArgumentList "$env:NGROK_EXE"
-
-          Start-Sleep -Seconds 10
+          $ngrokJob = Start-Job {
+            & $using:env:NGROK_EXE http 9001 --log=stdout
+          }
 
           while ($true) {
             $elapsed = ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $startTime)
+            if ($elapsed -ge $targetDuration) { break }
 
-            if ($elapsed -ge $targetDuration) {
-              break
-            }
-
-            if ((Get-Job $nodeJob.Id).State -eq 'Failed' -or
-                (Get-Job $ngrokJob.Id).State -eq 'Failed') {
-              throw "Node or ngrok job failed"
+            if ((Get-Job $nodeJob.Id).State -eq "Failed" -or
+                (Get-Job $ngrokJob.Id).State -eq "Failed") {
+              throw "Node or ngrok crashed"
             }
 
             Start-Sleep -Seconds 30
           }
 
-      # ================= CLEANUP & UPLOAD =================
+      # ================= UPLOAD BACK =================
 
-      - name: Stop Node & ngrok and upload
+      - name: Stop processes and upload
         if: success()
         shell: powershell
         run: |
@@ -166,19 +163,18 @@ jobs:
 
           Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
           Get-Process ngrok -ErrorAction SilentlyContinue | Stop-Process -Force
-          Get-Process sshx -ErrorAction SilentlyContinue | Stop-Process -Force
 
           cd $env:WORK_DIR
           tar -cvf chat.tar chat-main
 
-          curl.exe --fail -X POST `
-            https://abstrusely-procompensation-phuong.ngrok-free.dev/delete
+          Invoke-WebRequest -Method POST `
+            -Uri "https://abstrusely-procompensation-phuong.ngrok-free.dev/delete"
 
           Start-Sleep -Seconds 15
 
-          curl.exe --fail -X POST -F `
-            "file=@chat.tar" `
-            https://abstrusely-procompensation-phuong.ngrok-free.dev/upload
+          Invoke-WebRequest -Method POST `
+            -Uri "https://abstrusely-procompensation-phuong.ngrok-free.dev/upload" `
+            -Form @{ file = Get-Item "chat.tar" }
 
-          curl.exe --fail -X POST `
-            https://illuminative-myriadly-ferdinand.ngrok-free.dev/trigger
+          Invoke-WebRequest -Method POST `
+            -Uri "https://illuminative-myriadly-ferdinand.ngrok-free.dev/trigger"
