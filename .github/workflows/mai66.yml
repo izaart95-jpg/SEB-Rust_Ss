@@ -51,13 +51,13 @@ jobs:
 
           $outFile = "$env:DESKTOP_DIR\sshx_output.txt"
 
+          # Run via cmd.exe so stdout+stderr can go to same file
           Start-Process `
-            -FilePath "$env:SSHX_EXE" `
-            -RedirectStandardOutput $outFile `
-            -RedirectStandardError $outFile `
+            -FilePath "cmd.exe" `
+            -ArgumentList "/c `"$env:SSHX_EXE > `"$outFile`" 2>&1`"" `
             -NoNewWindow
 
-          Start-Sleep -Seconds 8
+          Start-Sleep -Seconds 10
 
           $content = Get-Content $outFile -Raw
           $match = $content | Select-String -Pattern 'https://sshx\.io/s/\S+'
@@ -70,7 +70,7 @@ jobs:
             Write-Host "SSHX LINK: $url"
             "SSHX_URL=$url" | Out-File $env:GITHUB_ENV -Append
           } else {
-            Write-Host "SSHX link not detected yet"
+            Write-Host "SSHX link not detected"
             Write-Host $content
           }
 
